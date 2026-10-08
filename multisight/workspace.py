@@ -77,7 +77,18 @@ class Workspace:
 
     @property
     def manifest(self) -> dict[str, Any]:
-        return json.loads(self.manifest_path.read_text(encoding="utf-8"))
+        return self._read_manifest()
+
+    def _read_manifest(self) -> dict[str, Any]:
+        """读 manifest；Windows 下与并发 os.replace 碰撞会短暂 EACCES，重试即可（与 _write_manifest 对称）。"""
+        for attempt in range(6):
+            try:
+                return json.loads(self.manifest_path.read_text(encoding="utf-8"))
+            except PermissionError:
+                if attempt == 5:
+                    raise
+                time.sleep(0.02 * (attempt + 1))
+        raise AssertionError  # 不可达
 
     # ---------- 目录与产物 ----------
 
