@@ -1,2 +1,14 @@
 # MultiSight3D
-MultiSight3D：Open source multi-view photogrammetry tool, reconstruct textured 3D mesh from multiple photos of an object.  开源多视图摄影测量工具，通过物体多角度照片重建带纹理三维网格模型。
+
+MultiSight3D 是一套自研开源多视图摄影测量管线，使用普通相机环绕拍摄的多张照片重建物体三维模型。
+
+✅ 核心能力
+- 无序图像SfM：自动求解每张照片的相机内外参与空间位姿
+- MVS稠密重建：生成物体稠密点云
+- 网格重建与纹理映射：输出带真实贴图的OBJ/PLY/GLB模型
+- 命令行优先，轻量可集成；可选WebUI用于上传图片、预览重建结果
+
+💡 适用场景
+实物扫描、文物数字化、手办/样品资产重建、小型场景三维采集。
+
+> 无需专业扫描设备，普通手机多角度拍照即可完成重建。
