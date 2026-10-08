@@ -143,13 +143,24 @@ class Workspace:
         return None
 
     def _write_manifest(self, manifest: dict[str, Any]) -> None:
-        """临时文件 + os.replace 原子写，进程中断不会留下半个 JSON。"""
+        """临时文件 + os.replace 原子写，进程中断不会留下半个 JSON。
+
+        Windows 下目标文件被并发读句柄占用时 replace 会招 PermissionError
+        （CI runner 实测），短暂重试即可消解。
+        """
         self.manifest_path.parent.mkdir(parents=True, exist_ok=True)
         fd, tmp = tempfile.mkstemp(dir=str(self.manifest_path.parent), suffix=".tmp")
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 json.dump(manifest, f, ensure_ascii=False, indent=2)
-            os.replace(tmp, self.manifest_path)
+            for attempt in range(5):
+                try:
+                    os.replace(tmp, self.manifest_path)
+                    return
+                except PermissionError:
+                    if attempt == 4:
+                        raise
+                    time.sleep(0.02 * (attempt + 1))
         finally:
             if os.path.exists(tmp):
                 os.remove(tmp)

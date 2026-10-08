@@ -87,14 +87,15 @@ def run_pipeline(ws: Workspace, *, from_stage: str | None = None,
     ctx = StageContext(ws=ws, bus=bus, engine=engine, params=params)
     ok = True
     for name in STAGES[start:]:
-        stage = build_stage(name, engine)
-        ws.set_stage(name, status=STATUS_RUNNING, progress=0)
-        bus.publish("stage_start", stage=name)
         try:
+            stage = build_stage(name, engine)
+            ws.set_stage(name, status=STATUS_RUNNING, progress=0)
+            bus.publish("stage_start", stage=name)
             stage.run(ctx)
             ws.set_stage(name, status=STATUS_DONE, progress=100)
             bus.publish("stage_done", stage=name)
         except Exception as exc:  # noqa: BLE001 - 阶段失败需归因而不是炸掉整条管线
+            # 含状态写入本身失败（如 Windows 文件锁）：兼顾不到时至少把异常广播出去
             ws.set_stage(name, status=STATUS_FAILED, error=f"{type(exc).__name__}: {exc}")
             bus.publish("stage_failed", stage=name, error=str(exc))
             ok = False

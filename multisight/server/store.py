@@ -9,7 +9,7 @@ from typing import Iterable
 
 from ..events import Bus
 from ..pipeline import run_pipeline
-from ..workspace import STAGES, Workspace, discover_tasks
+from ..workspace import (STAGES, STATUS_FAILED, Workspace, discover_tasks)
 
 _SAFE_NAME = re.compile(r"[^\w.\-]+")
 
@@ -92,5 +92,14 @@ class TaskManager:
     def _run(ws: Workspace, bus: Bus) -> None:
         try:
             run_pipeline(ws, bus=bus)
-        except Exception:  # noqa: BLE001 - 后台线程兜底，异常已体现在 manifest
-            pass
+        except Exception as exc:  # noqa: BLE001 - 管线外层意外异常也要落到 manifest，避免任务永久卡住
+            try:
+                stuck = ws.next_incomplete_stage()
+                if stuck:
+                    ws.set_stage(stuck, status=STATUS_FAILED,
+                                 error=f"{type(exc).__name__}: {exc}")
+                bus.publish("stage_failed", stage=stuck or "pipeline", error=str(exc))
+                bus.publish("end", ok=False)
+            except Exception:  # noqa: BLE001 - 兜底链路也失败时仅剩日志价值
+                import traceback
+                traceback.print_exc()

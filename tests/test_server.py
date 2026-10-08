@@ -26,8 +26,8 @@ def _photo_files(photos_dir, n=3):
     return files
 
 
-def wait_done(c, task_id, timeout=20):
-    """轮询至管线结束（mock 全链路 <2s，留足 CI 余量）。"""
+def wait_done(c, task_id, timeout=60):
+    """轮询至管线结束（mock 全链路本地 <2s；CI Windows runner 慢，留足余量）。"""
     deadline = time.time() + timeout
     while time.time() < deadline:
         t = c.get(f"/api/tasks/{task_id}").json()
