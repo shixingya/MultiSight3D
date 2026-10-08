@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.11", "3.12"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install (core + server + dev)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[server,dev]"
+      - name: Run tests
+        run: pytest -q
+      - name: CLI smoke (mock 端到端)
+        run: |
+          python -c "from tests.conftest import make_photo; from pathlib import Path; d=Path('demo_photos'); d.mkdir(); [make_photo(d/f'p{i}.jpg', seed=i) for i in range(4)]"
+          multisight reconstruct -i demo_photos -o demo_ws --preset fast
+          python -c "import sys; from pathlib import Path; sys.exit(0 if list(Path('demo_ws').glob('*/texture/model.glb')) else 1)"

@@ -1,0 +1,105 @@
+# MultiSight3D 架构说明
+
+> 对应 PRD §9 的工程化细化。当前状态：**v0.1 骨架**（CLI + WebUI 双端可跑，mock 引擎端到端）。
+
+## 1. 总览
+
+```
+照片输入 → [S1 preprocess] → [S2 sfm] → [S3 mvs] → [S4a mesh] → [S4b texture] → [report]
+```
+
+- **双形态同内核**：CLI（`multisight reconstruct`）与 WebUI（`multisight serve`）
+  调用同一个 `pipeline.run_pipeline`；算法能力一律先落 CLI，再被 WebUI 复用（PRD §11-3 决策）。
+- **引擎适配器**（沿用 Butian3D 经验）：每个阶段模块暴露 `Mock` / `Real` 两个类，
+  `MS_ENGINE=mock|real` 或 `--engine` 切换。mock 保证零算法也能端到端演示与测试；
+  Real 未落地时抛带里程碑指向的 `NotImplementedError`，绝不静默假成功。
+
+## 2. 目录与模块边界
+
+```
+multisight/
+├── cli.py            # argparse 子命令：reconstruct / report / stages / serve
+├── pipeline.py       # 状态机执行器：阶段编排、from-stage/resume、失败中断
+├── events.py         # Bus：线程安全发布/订阅 + 历史回放（CLI 控制台 & SSE 共用）
+├── workspace.py      # 工作区约定：manifest.json 原子写、产物清单、路径守卫
+├── stages/
+│   ├── __init__.py   # build_stage(name, engine) 注册表
+│   ├── _base.py      # NotImplementedReal 占位基类
+│   ├── _synth.py     # mock 合成产物：PLY/OBJ/GLB/贴图/COLMAP 目录写出器
+│   └── preprocess.py / sfm.py / mvs.py / mesh.py / texture.py / report.py
+├── server/           # FastAPI：任务 CRUD + SSE + 产物下载 + 静态页
+└── webui/            # 无构建单页：index.html + app.js（three.js 走 importmap CDN）
+```
+
+**阶段间零代码耦合**：只通过「工作目录 + 标准工件」交接（PRD NFR-05），
+后续任一 Real 算法落地只替换对应 `stages/<name>.py` 的 `Real` 类。
+
+## 3. 工作区契约
+
+每个任务一个目录 `workspace/<task_id>/`：
+
+```
+manifest.json         # 阶段状态机（pending/running/done/failed + progress + error），原子写
+raw/                  # 原始上传/拷入照片
+images/  list.json + 降采样后 jpg      # ← preprocess 产物
+sfm/     cameras.txt images.txt points3D.ply [+stats.json]  # COLMAP 兼容目录 ← sfm
+mvs/     fusion.ply                    # ← mvs
+mesh/    mesh.obj                      # ← mesh
+texture/ texture.png model.glb         # ← texture（GLB 单文件直出）
+report/  report.json                   # ← report（聚合指标 + 警告 + 补救建议）
+```
+
+- `--from-stage X`：先校验 X 之前所有阶段 `artifact_ready`，缺件拒跑。
+- `--resume`：定位 manifest 中第一个非 done 阶段续跑；失败不清空已完成产物（NFR-04）。
+- `task_id` = 时间戳 + 随机 hex，仅由程序生成，天然防路径注入面。
+
+## 4. 事件流与 SSE
+
+```
+stage.run ──progress()──▶ Bus.publish ──▶ CLI 控制台渲染线程
+                        （history 回放）──▶ SSE /api/tasks/{id}/events
+```
+
+- 事件类型：`stage_start / progress / stage_done / stage_failed / end`。
+- `Bus.subscribe(replay=True)`：浏览器刷新 / 断线重连不丢进度。
+- 任务已结束或服务重启后：按 manifest 一次性回放（含补发 stage_done/stage_failed
+  终止态，保证回放与实时链路视觉一致）后关闭流。
+- EventSource 无法带 Header → 当前本地匿名可用；FR-16 账号体系落地时沿用
+  Butian3D 的 `?token=` 查询参数方案。
+
+## 5. Web API（v0.1）
+
+| 方法 & 路径 | 说明 |
+| --- | --- |
+| `GET /api/health` | `{status, engine}` |
+| `POST /api/tasks` | multipart `photos`（≤500 张、单张 ≤20MB）+ `preset`，后台线程起管线 |
+| `GET /api/tasks` | manifest 扫描聚合的任务列表（重启可恢复） |
+| `GET /api/tasks/{id}` | 摘要 + `artifacts` + `live` |
+| `GET /api/tasks/{id}/events` | **SSE** 实时/回放进度 |
+| `GET /api/tasks/{id}/file?path=` | 产物下载（`safe_relpath`：限定工作区内 + 后缀白名单；manifest.json 不对外） |
+| `GET /`、`GET /app.js` | WebUI 静态页 |
+
+## 6. 前端选型：无构建 WebUI 壳
+
+v0.1 用「单 HTML + ES Module + importmap(CDN three.js)」零构建方案：
+Python 开发者 `pip install -e .[server]` 即可跑起完整 UI，避开 Node 工具链
+（PRD 风险表「Windows 安装地狱」对策）。CDN 不可达时优雅降级为下载指引。
+若后续 WebUI 复杂度上升（账号/工作区/多页），再评估迁 React/Vite（复用
+Butian3D 前端资产：ReconScene 资产加载位、SSE token 方案）。
+
+## 7. 与 PRD 里程碑映射
+
+| 里程碑 | 交付 | 代码钩子（现已就位） |
+| --- | --- | --- |
+| v0.1 | 骨架 + 自研 SfM | `stages/sfm.Real` 替换点；`_synth` 的 COLMAP 目录即目标落盘格式 |
+| v0.2 | 学习型 MVS + PatchMatch 兜底 | `stages/mvs.Real`；设备探测（CUDA/MPS/CPU）选档在 pipeline.params 扩展 |
+| v0.3 | 网格 + 纹理烘焙 | `mesh.Real` / `texture.Real`；`_synth.write_glb_*` 替换为真实烘焙产物 |
+| v0.4 | 报告/归因/补拍建议/账号隔离 | `report` 已聚合指标与警告；FR-16 加 `server/routes` 鉴权层 |
+| v1.0 | 打磨发布 + Docker | `Dockerfile` 待补；CI 双 OS 矩阵已就位 |
+
+## 8. 测试策略
+
+- `tests/conftest.py`：Pillow 程序化生成测试照片（零二进制入库，延续 Butian3D 理念）。
+- 分层：workspace 状态机单测 / pipeline 端到端（mock 全链路、real 失败中断、resume、
+  from-stage 前置校验、模糊检出警告）/ CLI 行为 / HTTP 接口（上传→轮询→下载→守卫→SSE 回放）。
+- CI：`ubuntu × windows × py3.11/3.12` 矩阵 + CLI 冒烟（见 `.github/workflows/ci.yml`）。

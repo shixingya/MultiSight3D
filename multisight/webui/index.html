@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>MultiSight3D · 多视图摄影测量</title>
+<style>
+  :root { --bg:#0b0d12; --panel:#141824; --line:#232a3d; --text:#dde4f2; --dim:#8b95ad;
+          --acc:#5b8def; --ok:#3fb27f; --bad:#e0655e; }
+  * { box-sizing:border-box; margin:0; }
+  body { background:var(--bg); color:var(--text); font:14px/1.6 "Segoe UI", system-ui, sans-serif; }
+  header { padding:18px 26px; border-bottom:1px solid var(--line); display:flex; gap:12px; align-items:baseline; }
+  header h1 { font-size:18px; letter-spacing:.5px; }
+  header span { color:var(--dim); font-size:12px; }
+  main { display:grid; grid-template-columns:340px 1fr; gap:18px; padding:18px 26px; max-width:1280px; margin:auto; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; }
+  .card h2 { font-size:13px; color:var(--dim); text-transform:uppercase; letter-spacing:1px; margin-bottom:10px; }
+  .drop { border:2px dashed var(--line); border-radius:10px; padding:26px 12px; text-align:center;
+          color:var(--dim); cursor:pointer; transition:.15s; }
+  .drop.on, .drop:hover { border-color:var(--acc); color:var(--text); }
+  .row { display:flex; gap:8px; margin-top:10px; align-items:center; }
+  select, button { background:#1b2233; color:var(--text); border:1px solid var(--line);
+                   border-radius:8px; padding:7px 12px; font:inherit; cursor:pointer; }
+  button.go { background:var(--acc); border-color:var(--acc); font-weight:600; }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  ul.tasks { list-style:none; display:flex; flex-direction:column; gap:8px; margin-top:6px; }
+  ul.tasks li { padding:10px 12px; border:1px solid var(--line); border-radius:10px; cursor:pointer; }
+  ul.tasks li.sel { border-color:var(--acc); }
+  ul.tasks .id { font-weight:600; font-size:13px; word-break:break-all; }
+  .pill { font-size:11px; padding:1px 8px; border-radius:99px; border:1px solid var(--line); color:var(--dim); }
+  .pill.done{color:var(--ok);} .pill.running{color:var(--acc);} .pill.failed{color:var(--bad);}
+  .stage { display:grid; grid-template-columns:92px 1fr 42px; gap:10px; align-items:center; margin:7px 0; }
+  .bar { height:7px; background:#1b2233; border-radius:99px; overflow:hidden; }
+  .bar i { display:block; height:100%; width:0; background:var(--acc); transition:width .3s; }
+  .bar.ok i { background:var(--ok); } .bar.bad i { background:var(--bad); }
+  .log { font-family:Consolas,monospace; font-size:12px; color:var(--dim); background:#0d1017;
+         border-radius:8px; padding:10px; min-height:74px; max-height:150px; overflow:auto; white-space:pre-wrap; }
+  #viewer { width:100%; height:380px; border-radius:10px; background:#08090d; position:relative; overflow:hidden; }
+  #viewer canvas { display:block; }
+  .hint { position:absolute; inset:0; display:grid; place-items:center; color:var(--dim); font-size:13px; text-align:center; padding:20px; }
+  .dl { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+  .dl a { color:var(--acc); text-decoration:none; border:1px solid var(--line); border-radius:8px; padding:5px 12px; font-size:13px; }
+  .right { display:flex; flex-direction:column; gap:18px; }
+  .cols { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+  @media (max-width:900px){ main{grid-template-columns:1fr;} .cols{grid-template-columns:1fr;} }
+</style>
+</head>
+<body>
+<header>
+  <h1>MultiSight3D</h1>
+  <span>开源多视图摄影测量管线 · 照片 → 带纹理三维模型 · 本地运行，数据不出机器</span>
+</header>
+<main>
+  <section class="left">
+    <div class="card">
+      <h2>新建重建任务</h2>
+      <div class="drop" id="drop">拖入或点击选择照片<br /><small id="fnames">支持 jpg / png，环绕物体拍摄 15–150 张</small></div>
+      <input type="file" id="files" accept=".jpg,.jpeg,.png" multiple hidden />
+      <div class="row">
+        <select id="preset">
+          <option value="fast">快速档（1024px）</option>
+          <option value="standard" selected>标准档（1600px）</option>
+          <option value="fine">精细档（2400px）</option>
+        </select>
+        <button class="go" id="submit" disabled>上传并开始重建</button>
+      </div>
+    </div>
+    <div class="card" style="margin-top:18px">
+      <h2>任务列表</h2>
+      <ul class="tasks" id="tasks"></ul>
+    </div>
+  </section>
+  <section class="right">
+    <div class="cols">
+      <div class="card">
+        <h2>管线进度 <small id="cur" style="color:var(--dim)">未选择任务</small></h2>
+        <div id="stages"></div>
+        <div class="log" id="log" style="margin-top:10px">等待任务…（SSE 实时推进度）</div>
+      </div>
+      <div class="card">
+        <h2>模型预览</h2>
+        <div id="viewer"><div class="hint" id="vhint">完成重建后在此预览 GLB<br />（首次需联网加载 three.js）</div></div>
+        <div class="dl" id="dl"></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>说明</h2>
+      <p style="color:var(--dim)">当前为 <b>mock 引擎</b>端到端演示：管线/进度/下载/预览链路全真，算法产物为占位几何。
+      自研 SfM 按里程碑 v0.1 交付（<a style="color:var(--acc)" href="https://github.com/shixingya/MultiSight3D/blob/main/doc/PRD.md">PRD</a>）。
+      CLI 等价命令：<code>multisight reconstruct -i photos/ -o workspace/</code></p>
+    </div>
+  </section>
+</main>
+<script type="importmap">
+{ "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module" src="/app.js"></script>
+</body>
+</html>
