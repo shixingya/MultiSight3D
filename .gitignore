@@ -12,6 +12,9 @@ workspace/
 MS_DATA_DIR/
 demo_*/
 
+# 外部资源模型归一化产物（import-asset 输出：贴图/GLB/demo.html 均不入库）
+assets_out/
+
 # 测试与工具缓存
 .pytest_cache/
 .ruff_cache/

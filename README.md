@@ -19,6 +19,7 @@ MultiSight3D 追求 **「一条命令进，一个 GLB 出」**：比 COLMAP 更�
 | 网格重建 + 纹理映射，GLB/OBJ/PLY 直出 | v0.3 | ✅ mock 产物链（合法 GLB/OBJ/PLY） |
 | CLI 一键全流程 / 断点续跑 / 质量报告 | v0.1 | ✅ 已可用 |
 | WebUI：拖拽上传 / 实时进度 / 3D 预览 / 下载 | v0.1 壳 | ✅ 已可用 |
+| 外部成品模型读取（OpenFlight .flt / TGA / docx / 转盘）+ 单文件离线 demo | v0.1 旁支 | ✅ 已可用 |
 | 拍摄预检（模糊检测 / 补拍建议） | v0.4 增强 | ✅ 基础版已可用 |
 
 ## 🚀 快速开始
@@ -35,10 +36,19 @@ multisight reconstruct -i photos/ -o workspace/
 
 # WebUI：上传 → SSE 实时进度 → three.js 预览 → 下载
 multisight serve --port 8050
+
+# 外部成品模型（美术资源库）：读取 .flt/.ive + TGA + docx + 转盘 sprites
+#   归一化落盘并生成「无需部署、双击即开」的单文件自包含 demo.html
+multisight import-asset -i "D:/path/to/模型目录" -o assets_out --demo
+#   serve 时自动把 assets_out/ 作为「资源模型库」呈现（--assets-dir 可改）
 ```
 
 浏览器打开 `http://localhost:8050`。默认 `MS_ENGINE=mock` 用内置模拟引擎演示全链路；
 `MS_ENGINE=real` 加载自研算法（未落地阶段会明确报错并指向里程碑，不会静默假成功）。
+
+> 💡 `import-asset` 产出的 `demo.html` 把转盘帧 / 贴图 / 元数据全部以 base64 内联，零依赖零网络，
+> 直接双击即可在浏览器打开——正合「无需部署、线上直接运行」。若 `.flt` 几何通过严格校验，
+> 还会多出「真三维」标签（three.js 走 CDN，离线自动降级为转盘）。
 
 ## 🧱 技术栈
 
@@ -47,7 +57,7 @@ multisight serve --port 8050
 | 管线 | Python ≥ 3.10 · 六阶段模块化（preprocess/sfm/mvs/mesh/texture/report）· manifest 断点续跑 |
 | CLI | argparse（核心零重依赖） |
 | WebUI | FastAPI + SSE · 无构建单页（ES Module + importmap three.js CDN） |
-| 测试 | pytest（20 用例：状态机/端到端/CLI/HTTP）· CI 双 OS × 双 Python 矩阵 |
+| 测试 | pytest（27 用例：状态机/端到端/CLI/HTTP/资产库）· CI 双 OS × 双 Python 矩阵 |
 
 ## 📁 项目结构
 
@@ -55,7 +65,8 @@ multisight serve --port 8050
 multisight/
 ├── pipeline.py  workspace.py  events.py  cli.py   # 状态机 / 工作区契约 / 事件总线 / CLI
 ├── stages/        # 六阶段：Mock(内置演示) + Real(自研，按里程碑替换)
-├── server/        # FastAPI：任务 · SSE · 产物下载
+├── assets/        # 外部成品模型读取线（OpenFlight/docx/TGA/GLB/library/demo）
+├── server/        # FastAPI：任务 · SSE · 产物下载 · 资产接口
 ├── webui/         # 单页前端（上传/进度/预览/下载）
 doc/               # PRD.md · ARCHITECTURE.md
 datasets/          # 标准回归数据集占位（图片不入库）

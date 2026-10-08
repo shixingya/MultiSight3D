@@ -18,7 +18,7 @@
 
 ```
 multisight/
-├── cli.py            # argparse 子命令：reconstruct / report / stages / serve
+├── cli.py            # argparse 子命令：reconstruct / report / stages / import-asset / serve
 ├── pipeline.py       # 状态机执行器：阶段编排、from-stage/resume、失败中断
 ├── events.py         # Bus：线程安全发布/订阅 + 历史回放（CLI 控制台 & SSE 共用）
 ├── workspace.py      # 工作区约定：manifest.json 原子写、产物清单、路径守卫
@@ -27,7 +27,11 @@ multisight/
 │   ├── _base.py      # NotImplementedReal 占位基类
 │   ├── _synth.py     # mock 合成产物：PLY/OBJ/GLB/贴图/COLMAP 目录写出器
 │   └── preprocess.py / sfm.py / mvs.py / mesh.py / texture.py / report.py
-├── server/           # FastAPI：任务 CRUD + SSE + 产物下载 + 静态页
+├── assets/           # 外部成品模型读取线（与照片重建并行）：
+│   │                 #   openflight(.flt 识别+校验几何) / spec(docx) / textures(TGA→PNG)
+│   │                 #   glb(泛化 GLB 写出) / library(扫描·导入聚合) / demo(单文件 HTML)
+│   └── __init__.py   # scan/import/load_asset_bundle · render_single_file_html 等出口
+├── server/           # FastAPI：任务 CRUD + SSE + 产物下载 + 资产接口 + 静态页
 └── webui/            # 无构建单页：index.html + app.js（three.js 走 importmap CDN）
 ```
 
@@ -77,6 +81,9 @@ stage.run ──progress()──▶ Bus.publish ──▶ CLI 控制台渲染线
 | `GET /api/tasks/{id}` | 摘要 + `artifacts` + `live` |
 | `GET /api/tasks/{id}/events` | **SSE** 实时/回放进度 |
 | `GET /api/tasks/{id}/file?path=` | 产物下载（`safe_relpath`：限定工作区内 + 后缀白名单；manifest.json 不对外） |
+| `GET /api/assets` | 资源模型库列表（扫 `<assets_dir>/*/asset.json` 摘要：folder/name/display/sprite_count） |
+| `GET /api/assets/{folder}/demo` | 现场渲染单文件自包含 HTML（转盘/贴图/元数据，data URI 内联） |
+| `GET /api/assets/{folder}/file?path=` | 资产归一化产物下载（`safe_relpath` 限定 assets 根内） |
 | `GET /`、`GET /app.js` | WebUI 静态页 |
 
 ## 6. 前端选型：无构建 WebUI 壳
@@ -87,7 +94,34 @@ Python 开发者 `pip install -e .[server]` 即可跑起完整 UI，避开 Node 
 若后续 WebUI 复杂度上升（账号/工作区/多页），再评估迁 React/Vite（复用
 Butian3D 前端资产：ReconScene 资产加载位、SSE token 方案）。
 
-## 7. 与 PRD 里程碑映射
+## 7. 资源模型读取子系统（外部成品模型）
+
+与「照片 → 重建」主管线并行的一条能力线：直接读取美术资源库里的**成品模型**
+（OpenFlight `.flt` / Performer `.ive` + TGA 贴图 + docx 技术说明 + 转盘 `sprites/`），
+不必重新摄影测量即可展示。`multisight/assets/` 为纯读取/转换模块，产物只落 `assets_out/`，
+**原始美术二进制不入库**（延续 NFR 零二进制理念）。
+
+数据流：
+
+```
+资源目录 ──scan_asset_dir──▶ AssetBundle（meta/openflight/贴图/sprites/display 决策）
+        ──import_asset_dir─▶ <assets_out>/<folder>/{asset.json, texture.png, sprites/frame_*.png, [model.glb]}
+        ──render_single_file_html──▶ 单文件自包含 demo.html（base64 内联，双击即开、离线零网络）
+```
+
+关键设计取舍：
+- **OpenFlight 是二进制记录流**（大端，每条 = u16 opcode + u16 length，4 字节对齐）；
+  `describe_openflight` 解析 308 字节头 + 走记录流做 opcode 直方图，**总是**给出格式指纹。
+- **几何提取「宁缺毋滥」**：现实导出器（尤其 **Maya 的 OpenFlight 插件**）常产出非标准变体
+  ——面/顶点记录被写成空壳模板。`extract_mesh` 仅在数量与包围盒都合理（≥`min_tris`、
+  span∈(0.01, 200]m、拒绝全零顶点）时才组装网格，否则返回 `None`，上层据 `geometry_ok`
+  干净回退到真实渲染转盘，**绝不 ship 错乱网格**。
+- **展示模式自动决策**：`display = glb`（几何通过）> `turntable`（有 sprites）> `texture`。
+  demo.html 把三种模式做成可切换标签；真三维 GLB 走 CDN three.js，离线时降级提示。
+- CLI `import-asset --demo` 与 WebUI「资源模型库」面板（`/api/assets` + iframe 加载
+  `/api/assets/{folder}/demo`）共用同一套 `assets` 内核。
+
+## 8. 与 PRD 里程碑映射
 
 | 里程碑 | 交付 | 代码钩子（现已就位） |
 | --- | --- | --- |
@@ -97,7 +131,7 @@ Butian3D 前端资产：ReconScene 资产加载位、SSE token 方案）。
 | v0.4 | 报告/归因/补拍建议/账号隔离 | `report` 已聚合指标与警告；FR-16 加 `server/routes` 鉴权层 |
 | v1.0 | 打磨发布 + Docker | `Dockerfile` 待补；CI 双 OS 矩阵已就位 |
 
-## 8. 测试策略
+## 9. 测试策略
 
 - `tests/conftest.py`：Pillow 程序化生成测试照片（零二进制入库，延续 Butian3D 理念）。
 - 分层：workspace 状态机单测 / pipeline 端到端（mock 全链路、real 失败中断、resume、

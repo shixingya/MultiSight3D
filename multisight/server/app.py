@@ -15,7 +15,7 @@ import queue
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 
 from ..pipeline import PRESETS, DEFAULT_ENGINE
 from ..workspace import safe_relpath
@@ -27,11 +27,17 @@ MAX_FILES = 500                 # PRD §5.3：单任务 ≤500 张
 MAX_FILE_BYTES = 20 * 1024 * 1024   # 单张 ≤20MB
 
 _data_dir = os.environ.get("MS_DATA_DIR", "workspace")
+_assets_dir = os.environ.get("MS_ASSETS_DIR", "assets_out")
 
 
 def set_data_dir(path: str) -> None:
     global _data_dir
     _data_dir = path
+
+
+def set_assets_dir(path: str) -> None:
+    global _assets_dir
+    _assets_dir = path
 
 
 def _sse(event: dict) -> str:
@@ -147,6 +153,56 @@ def create_app() -> FastAPI:
         if target is None or not target.is_file():
             raise HTTPException(404, "artifact_not_found")
         return FileResponse(target, filename=target.name)
+
+    # ---------- 资源模型库（外部成品模型：读取 + 展示） ----------
+
+    def _asset_dir(folder: str) -> Path:
+        base = Path(_assets_dir)
+        root = (base / folder).resolve()
+        try:
+            root.relative_to(base.resolve())
+        except ValueError:
+            raise HTTPException(400, "bad asset path")
+        if not (root / "asset.json").is_file():
+            raise HTTPException(404, "asset_not_found")
+        return root
+
+    @app.get("/api/assets")
+    def list_assets():
+        base = Path(_assets_dir)
+        out = []
+        if base.is_dir():
+            for sub in sorted(base.iterdir()):
+                aj = sub / "asset.json"
+                if not aj.is_file():
+                    continue
+                try:
+                    d = json.loads(aj.read_text(encoding="utf-8"))
+                except (json.JSONDecodeError, OSError):
+                    continue
+                out.append({"folder": sub.name, "name": d.get("name"),
+                            "display": d.get("display"), "triangles": d.get("triangles"),
+                            "geometry_ok": d.get("geometry_ok"),
+                            "sprite_count": len(d.get("sprites", []))})
+        return {"assets": out}
+
+    @app.get("/api/assets/{folder}/demo")
+    def asset_demo(folder: str):
+        from ..assets import load_asset_bundle, render_single_file_html
+        root = _asset_dir(folder)
+        try:
+            bundle = load_asset_bundle(root)
+        except (json.JSONDecodeError, OSError, KeyError):
+            raise HTTPException(500, "asset load failed")
+        return HTMLResponse(render_single_file_html(bundle))
+
+    @app.get("/api/assets/{folder}/file")
+    def asset_file(folder: str, path: str):
+        root = _asset_dir(folder)
+        target = safe_relpath(root, path)
+        if target is None or not target.is_file():
+            raise HTTPException(404, "asset_file_not_found")
+        return FileResponse(target)
 
     # ---------- WebUI 静态页 ----------
 

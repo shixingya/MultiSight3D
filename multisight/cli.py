@@ -96,6 +96,36 @@ def cmd_report(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_import_asset(args: argparse.Namespace) -> int:
+    """读取外部资源模型目录（OpenFlight/TGA/docx/sprites），归一化落盘并可生成单文件 demo。
+
+    --output 是「资产库根目录」：每个资源按源目录名归入 <output>/<folder>/，
+    与 server /api/assets 的 <folder>/asset.json 约定一致。
+    """
+    import re
+    from .assets import import_asset_dir, build_single_file_html
+    src = Path(args.input)
+    if not src.is_dir():
+        print(f"资源目录不存在：{src}", file=sys.stderr)
+        return 2
+    slug = re.sub(r'[\\/:*?"<>|]', "_", src.name).strip() or "asset"
+    out = Path(args.output) / slug
+    bundle = import_asset_dir(src, out)
+    print(f"资源模型：{bundle.name}")
+    print(f"  展示模式：{bundle.display}  几何校验：{'通过' if bundle.geometry_ok else '未通过（回退真实渲染）'}")
+    if bundle.meta.get("triangles"):
+        print(f"  技术说明：{bundle.meta['triangles']} 三角面  格式 {bundle.meta.get('format', '-')}")
+    if bundle.openflight.get("version_str"):
+        print(f"  OpenFlight：v{bundle.openflight['version_str']}  单位 {bundle.openflight.get('vertex_unit', '-')}")
+    print(f"  贴图：{'✓' if bundle.texture_png else '✗'}  转盘帧：{len(bundle.sprites)}  GLB：{bundle.glb or '—'}")
+    print(f"  产物目录：{out}")
+    if args.demo:
+        demo_path = out / "demo.html"
+        build_single_file_html(bundle, demo_path)
+        print(f"\n单文件 demo（双击即开，离线可运行）：{demo_path}")
+    return 0
+
+
 def cmd_stages(args: argparse.Namespace) -> int:
     for i, name in enumerate(STAGES, 1):
         print(f"{i}. {name}")
@@ -107,11 +137,12 @@ def cmd_stages(args: argparse.Namespace) -> int:
 def cmd_serve(args: argparse.Namespace) -> int:
     try:
         import uvicorn
-        from .server.app import create_app, set_data_dir
+        from .server.app import create_app, set_data_dir, set_assets_dir
     except ImportError:
         print("WebUI 需要 server 依赖：pip install -e '.[server]'", file=sys.stderr)
         return 1
     set_data_dir(args.data_dir)
+    set_assets_dir(args.assets_dir)
     app = create_app()
     print(f"MultiSight3D WebUI → http://localhost:{args.port}")
     uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
@@ -141,10 +172,17 @@ def build_parser() -> argparse.ArgumentParser:
     st = sub.add_parser("stages", help="列出管线阶段与档位")
     st.set_defaults(func=cmd_stages)
 
+    ia = sub.add_parser("import-asset", help="读取外部资源模型目录（OpenFlight/TGA/docx/sprites）")
+    ia.add_argument("-i", "--input", required=True, help="资源模型目录")
+    ia.add_argument("-o", "--output", default="assets_out", help="归一化产物输出目录")
+    ia.add_argument("--demo", action="store_true", help="额外生成单文件自包含 HTML demo")
+    ia.set_defaults(func=cmd_import_asset)
+
     sv = sub.add_parser("serve", help="启动 WebUI（上传/任务/SSE 进度/预览）")
     sv.add_argument("--host", default="127.0.0.1")
     sv.add_argument("--port", type=int, default=8000)
     sv.add_argument("--data-dir", default="workspace", help="任务工作区根目录")
+    sv.add_argument("--assets-dir", default="assets_out", help="资源模型库目录（import-asset 产物）")
     sv.set_defaults(func=cmd_serve)
     return p
 

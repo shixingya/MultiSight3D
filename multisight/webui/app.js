@@ -61,6 +61,34 @@ async function refreshTasks() {
 setInterval(refreshTasks, 4000);
 refreshTasks();
 
+/* ---------- 资源模型库 ---------- */
+async function refreshAssets() {
+  try {
+    const { assets } = await (await fetch('/api/assets')).json();
+    const ul = $('#assets'); ul.innerHTML = '';
+    if (!assets.length) { ul.innerHTML = '<li style="cursor:default;color:var(--dim)">暂无资源模型（用 import-asset 导入）</li>'; return; }
+    assets.forEach((a) => {
+      const li = document.createElement('li');
+      li.innerHTML = `<div class="id">${a.name || a.folder}</div>
+        <div style="margin-top:4px"><span class="pill">${a.display === 'glb' ? '真三维' : a.display === 'turntable' ? '转盘' : '贴图'}</span>
+        <span class="pill">${a.triangles ? a.triangles + ' 面' : '—'}</span><span class="pill">${a.sprite_count || 0} 帧</span></div>`;
+      li.onclick = () => openAsset(a.folder, a.name || a.folder);
+      ul.appendChild(li);
+    });
+  } catch { /* 资产接口不可用时静默 */ }
+}
+function openAsset(folder, title) {
+  destroyViewer(); current = null; es && es.close();
+  $('#cur').textContent = '· 资源模型：' + title;
+  buildStageRows(); $('#log').textContent = '';
+  const box = $('#viewer'); const h = $('#vhint'); if (h) h.style.display = 'none';
+  let fr = box.querySelector('iframe.asset');
+  if (!fr) { fr = document.createElement('iframe'); fr.className = 'asset'; fr.style.cssText = 'width:100%;height:100%;border:0;border-radius:10px;background:#0b0d12'; box.appendChild(fr); }
+  fr.src = `/api/assets/${encodeURIComponent(folder)}/demo`;
+  $('#dl').innerHTML = `<a href="/api/assets/${encodeURIComponent(folder)}/demo" target="_blank" rel="noopener">↗ 新窗口打开单文件 demo</a>`;
+}
+refreshAssets();
+
 /* ---------- 进度面板 + SSE ---------- */
 function buildStageRows() {
   const box = $('#stages'); box.innerHTML = '';
