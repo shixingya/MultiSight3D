@@ -117,7 +117,8 @@ def scan_asset_dir(folder: Path | str) -> AssetBundle:
     # 贴图（优先匹配 spec 里的 texture_file 名）
     texs = [p for p in files if p.suffix.lower() in _TEX_EXT]
     want = (bundle.meta.get("texture_file") or "").lower()
-    tex = next((p for p in texs if want and p.name.lower() == want), None)
+    # docx 声明可能带扩展名（model.tga）或只给基名（feiji_c_01）→ 两种都匹配
+    tex = next((p for p in texs if want and (p.name.lower() == want or p.stem.lower() == want)), None)
     if tex is None:
         # 排除 sprites 目录与 preview/structure，挑最大的彩色图当主贴图
         cand = [p for p in texs if "sprite" not in str(p.parent).lower()

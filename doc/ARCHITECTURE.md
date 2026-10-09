@@ -117,7 +117,9 @@ Butian3D 前端资产：ReconScene 资产加载位、SSE token 方案）。
   （完整解析需 OpenSceneGraph/Performer）；与 `.flt` 一同列入元数据面板。
 - **docx 技术说明零依赖提取**：zip 读 `word/document.xml` 按 `<w:p>` 切段，按中文字段标签取键值。
   表格“标题/值分行”，故坐标系取真正描述轴/手性的正文行（兼容描述行不含“坐标”二字的常见变体），
-  并单独抽出“坐标原点…”行作 `origin`。（真实 52 型号：name/triangles/scale/坐标系/原点 均 100% 命中。）
+  并单独抽出“坐标原点…”行作 `origin`。贴图声明名兼容带/不带扩展两种写法（“贴图：feiji_c_01”无后缀也能
+  抽出，并用于按 stem 优先匹配真实贴图文件，避免误选更大图）。（真实 52 型号：name/triangles/scale/坐标系/原点
+  均 100% 命中，贴图声明 51/52——唯一遗漏是一个损坏的重复 docx。）
 - **几何提取「宁缺毋滥」**：现实导出器（尤其 **Maya 的 OpenFlight 插件**）常产出非标准变体
   ——面/顶点记录被写成空壳模板。`extract_mesh` 仅在数量与包围盒都合理（≥`min_tris`、
   span∈(0.01, 200]m、拒绝全零顶点）时才组装网格，否则返回 `None`，上层据 `geometry_ok`

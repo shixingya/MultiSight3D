@@ -105,4 +105,9 @@ def parse_model_spec(path: Path | str) -> dict[str, Any]:
     m = re.search(r"([^\s/\\]+\.(?:tga|png|jpe?g|bmp|dds))", joined, flags=re.I)
     if m:
         meta["texture_file"] = m.group(1)
+    else:
+        # 常见变体：贴图声明只给基名不带扩展（如「贴图：feiji_c_01 大小：1024*1024像素」）
+        m2 = re.search(r"贴图\s*[:：]\s*([^\s，,、;；]+)", joined)
+        if m2:
+            meta["texture_file"] = m2.group(1).strip()
     return meta

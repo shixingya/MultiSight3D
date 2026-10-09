@@ -498,3 +498,34 @@ def test_demo_surfaces_origin(asset_dir):
     assert b.meta["origin"] == "坐标原点在世界坐标中心"
     html = render_single_file_html(b)
     assert "原点" in html and "世界坐标中心" in html
+
+
+def test_spec_texture_name_without_extension(tmp_path):
+    """常见变体：docx 只写“贴图：feiji_c_01”（无扩展名）→ 也应抽出 texture_file。"""
+    from multisight.assets import parse_model_spec
+    _write_docx(tmp_path / "s.docx", [
+        "模型贴图说明",
+        "贴图：feiji_c_01  大小：1024*1024像素",
+    ])
+    meta = parse_model_spec(tmp_path / "s.docx")
+    assert meta["texture_file"] == "feiji_c_01"
+    assert "1024*1024" in meta["texture_note"]
+
+
+def test_scan_matches_texture_by_stem(tmp_path):
+    """声明名为基名（无扩展）时，按 stem 优先匹配声明贴图，而非盲选最大图。"""
+    from pathlib import Path
+    from multisight.assets import scan_asset_dir as _scan
+    d = tmp_path / "m"
+    d.mkdir(parents=True)
+    _write_flt(d / "model.flt")
+    # declared 贴图很小；decoy 很大会被“最大图”回退误选
+    Image.new("RGB", (8, 8), (200, 30, 30)).save(d / "feiji_c_01.tga")
+    Image.new("RGB", (64, 64), (10, 10, 10)).save(d / "other_big.tga")
+    _write_docx(d / "三维模型技术说明.docx", [
+        "模型名称", "按声明匹配",
+        "贴图：feiji_c_01 大小：8*8像素",
+    ])
+    b = _scan(d)
+    assert b.meta["texture_file"] == "feiji_c_01"
+    assert Path(b.texture_png).name == "feiji_c_01.tga"   # 命中声明而非更大 decoy
