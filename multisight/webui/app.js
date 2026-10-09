@@ -67,9 +67,23 @@ async function refreshAssets() {
     const { assets } = await (await fetch('/api/assets')).json();
     const ul = $('#assets'); ul.innerHTML = '';
     if (!assets.length) { ul.innerHTML = '<li style="cursor:default;color:var(--dim)">暂无资源模型（用 import-asset 导入）</li>'; return; }
+    // 多分类时按大类分组（整库 22 类的扁平列表难浏览）；单/无分类保持平铺
+    const cats = new Set(assets.map((a) => a.category || ''));
+    const grouped = cats.size >= 2;
+    const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+    if (grouped) assets.sort((x, y) => (x.category || '').localeCompare(y.category || '', 'zh') || (x.name || x.folder).localeCompare(y.name || y.folder, 'zh'));
+    let lastCat = null;
     assets.forEach((a) => {
+      if (grouped && (a.category || '') !== lastCat) {
+        lastCat = a.category || '';
+        const hd = document.createElement('li');
+        hd.className = 'cathead';
+        hd.style.cssText = 'cursor:default;color:var(--acc);font-weight:600;text-transform:none;font-size:12px;letter-spacing:.5px';
+        hd.textContent = (lastCat || '未分类');
+        ul.appendChild(hd);
+      }
       const li = document.createElement('li');
-      li.innerHTML = `<div class="id">${a.name || a.folder}</div>
+      li.innerHTML = `<div class="id">${esc(a.name || a.folder)}</div>
         <div style="margin-top:4px"><span class="pill">${a.display === 'glb' ? '真三维' : a.display === 'turntable' ? '转盘' : '贴图'}</span>
         <span class="pill">${a.triangles ? a.triangles + ' 面' : '—'}</span><span class="pill">${a.sprite_count || 0} 帧</span></div>`;
       li.onclick = () => openAsset(a.folder, a.name || a.folder);
