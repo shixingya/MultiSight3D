@@ -391,6 +391,35 @@ def test_batch_reimport_on_source_change(tmp_path):
     assert r[0][3] is False                             # 变化→ 重导（未跳过）
 
 
+def test_batch_error_isolation(tmp_path, monkeypatch):
+    """整库无人值守批量：单个型号导入抛错不应中断整批，坏条目以警告占位。"""
+    from pathlib import Path
+    import multisight.assets.library as lib
+    parent = tmp_path / "library_src"
+    _build_asset(parent / "m1", "导弹1")
+    _build_asset(parent / "boom", "坏型号")
+    _build_asset(parent / "m2", "导弹2")
+    real = lib.import_asset_dir
+
+    def flaky(folder, out_dir, *, category=""):
+        if Path(folder).name == "boom":
+            raise RuntimeError("模拟磁盘/解码故障")
+        return real(folder, out_dir, category=category)
+
+    monkeypatch.setattr(lib, "import_asset_dir", flaky)
+    out = tmp_path / "assets_out"
+    results = lib.import_assets_root(parent, out)
+    names = {r[0] for r in results}
+    assert names == {"m1", "boom", "m2"}               # 三个都返回，未中断
+    bad = next(r for r in results if r[0] == "boom")
+    assert any("导入失败" in w for w in bad[2].warnings)
+    assert not (out / "boom" / "asset.json").is_file()  # 坏条目无产物 → 画廊自动忽略
+    for name in ("m1", "m2"):                           # 其余型号正常导入
+        good = next(r for r in results if r[0] == name)
+        assert (good[1] / "asset.json").is_file()
+        assert not any("导入失败" in w for w in good[2].warnings)
+
+
 # ---------------------------------------------------------------- 分类发现 / 整库导入
 
 def test_find_model_roots_whole_library(tmp_path):

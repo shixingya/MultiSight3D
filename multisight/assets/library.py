@@ -363,13 +363,19 @@ def import_assets_root(parent: Path | str, out_root: Path | str,
     for leaf, category, prefix in find_model_roots(parent):
         slug = slugify(f"{category}-{leaf.name}") if prefix else slugify(leaf.name)
         out = out_root / slug
-        if not force and is_up_to_date(out, leaf):
-            try:
-                results.append((leaf.name, out, load_asset_bundle(out), True))
-                continue
-            except (json.JSONDecodeError, OSError, KeyError):
-                pass   # 产物不可读 → 当未导入，重新导
-        results.append((leaf.name, out, import_asset_dir(leaf, out, category=category), False))
+        try:
+            if not force and is_up_to_date(out, leaf):
+                try:
+                    results.append((leaf.name, out, load_asset_bundle(out), True))
+                    continue
+                except (json.JSONDecodeError, OSError, KeyError):
+                    pass   # 产物不可读 → 当未导入，重新导
+            results.append((leaf.name, out, import_asset_dir(leaf, out, category=category), False))
+        except Exception as exc:  # noqa: BLE001 - 单个型号出错不应中断整库导入
+            # 用一个带错警告的 bundle 占位报告（无 asset.json → 画廊会自然忽略该目录）
+            err = AssetBundle(name=leaf.name, source_dir=str(leaf), category=category,
+                              display="texture", warnings=[f"导入失败：{exc!r}"])
+            results.append((leaf.name, out, err, False))
     return results
 
 
