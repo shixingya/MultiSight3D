@@ -176,14 +176,16 @@ def test_server_asset_endpoints(asset_dir, tmp_path):
     from multisight.server import app as appmod
 
     lib = tmp_path / "library"
-    import_asset_dir(asset_dir, lib / "agm-x")
+    import_asset_dir(asset_dir, lib / "agm-x", category="反舰导弹")
     appmod.set_data_dir(str(tmp_path / "ws"))
     appmod.set_assets_dir(str(lib))
     app = appmod.create_app()
 
     with TestClient(app) as c:
         items = c.get("/api/assets").json()["assets"]
-        assert any(a["folder"] == "agm-x" and a["sprite_count"] == 36 for a in items)
+        hit = next(a for a in items if a["folder"] == "agm-x")
+        assert hit["sprite_count"] == 36
+        assert hit["category"] == "反舰导弹"           # 列表 API 暴露分类（供 WebUI 分组）
 
         r = c.get("/api/assets/agm-x/demo")
         assert r.status_code == 200

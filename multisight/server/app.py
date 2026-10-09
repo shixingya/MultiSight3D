@@ -183,6 +183,7 @@ def create_app() -> FastAPI:
                 out.append({"folder": sub.name, "name": d.get("name"),
                             "display": d.get("display"), "triangles": d.get("triangles"),
                             "geometry_ok": d.get("geometry_ok"),
+                            "category": d.get("category", ""),
                             "sprite_count": len(d.get("sprites", []))})
         return {"assets": out}
 
