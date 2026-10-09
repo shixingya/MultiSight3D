@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Any
@@ -134,9 +135,11 @@ def import_asset_dir(folder: Path | str, out_dir: Path | str) -> AssetBundle:
         if normalize_texture(bundle.texture_png, dst):
             bundle.texture_png = str(dst)
 
-    # sprites 复制为规整命名 frame_000.png …
+    # sprites 复制为规整命名 frame_000.png …（先清空避免上次导入遗留的多余帧）
     if bundle.sprites:
         sdir = out_dir / "sprites"
+        if sdir.exists():
+            shutil.rmtree(sdir)
         sdir.mkdir(parents=True, exist_ok=True)
         norm: list[str] = []
         for i, s in enumerate(bundle.sprites):
@@ -165,6 +168,9 @@ def import_asset_dir(folder: Path | str, out_dir: Path | str) -> AssetBundle:
             write_glb(glb_path, mesh.positions, mesh.indices,
                       texture_png=None, name=bundle.name)
             bundle.glb = str(glb_path)
+    elif (out_dir / "model.glb").exists():
+        # 本次几何未通过：清除上次导入可能遗留的陈旧 GLB，避免 asset.json 与实际不一致
+        (out_dir / "model.glb").unlink()
 
     (out_dir / "asset.json").write_text(
         json.dumps(_relativize(bundle, out_dir), ensure_ascii=False, indent=2), encoding="utf-8")

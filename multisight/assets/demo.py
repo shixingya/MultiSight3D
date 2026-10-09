@@ -63,12 +63,14 @@ def render_library_index(root: Path | str, *, api: bool = False) -> str:
     """
     root = Path(root)
     cards = []
+    counts: dict[str, int] = {}
     for folder in list_library_asset_dirs(root):
         try:
             b = load_asset_bundle(folder)
         except (json.JSONDecodeError, OSError, KeyError):
             continue
         disp = {"glb": "真三维", "turntable": "转盘", "texture": "贴图"}.get(b.display, b.display)
+        counts[b.display] = counts.get(b.display, 0) + 1
         pills = [disp, f"{len(b.sprites)} 帧"]
         if b.triangles:
             pills.append(f"{b.triangles} 面")
@@ -81,13 +83,23 @@ def render_library_index(root: Path | str, *, api: bool = False) -> str:
             thumb = f"{quote(folder.name)}/{quote(rel)}" if rel else ""
         pic = (f'<img loading="lazy" src="{thumb}" alt=""/>' if thumb
                else '<div class="noimg">无预览图</div>')
-        title = (b.name or folder.name).replace("&", "&amp;").replace("<", "&lt;")
+        raw_title = b.name or folder.name
+        title = raw_title.replace("&", "&amp;").replace("<", "&lt;")
+        searchable = raw_title.lower().replace('"', "&quot;")
         cards.append(
-            f'<a class="card" href="{link}">{pic}<div class="meta">'
+            f'<a class="card" href="{link}" data-t="{b.display}" data-name="{searchable}">'
+            f'{pic}<div class="meta">'
             f"<h3>{title}</h3><div class=\"pills\">"
             + "".join(f"<span>{p}</span>" for p in pills) + "</div></div></a>")
     grid = "\n".join(cards) or '<p class="empty">暂无资源模型，先用 import-asset 导入。</p>'
-    return _INDEX_TEMPLATE.replace("__GRID__", grid)
+    total = sum(counts.values())
+    chips = ['<button class="chip active" data-f="">全部 <b>' + str(total) + "</b></button>"]
+    for key, label in (("glb", "真三维"), ("turntable", "转盘"), ("texture", "贴图")):
+        if counts.get(key):
+            chips.append(f'<button class="chip" data-f="{key}">{label} <b>{counts[key]}</b></button>')
+    html = _INDEX_TEMPLATE.replace("__GRID__", grid)
+    html = html.replace("__CHIPS__", "".join(chips))
+    return html
 
 
 def write_library_index(root: Path | str, out_path: Path | str | None = None) -> Path:
@@ -278,9 +290,44 @@ _INDEX_TEMPLATE = r"""<!DOCTYPE html>
  .pills span{background:#1b2233;color:var(--dim);border:1px solid var(--line);border-radius:6px;
    padding:2px 8px;font-size:11px}
  .empty{color:var(--dim);padding:40px 28px}
+ .bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:14px 28px;border-bottom:1px solid var(--line)}
+ .bar input{flex:1 1 200px;min-width:160px;background:#0f131d;color:var(--text);border:1px solid var(--line);
+   border-radius:9px;padding:8px 12px;font:inherit}
+ .chip{background:#1b2233;color:var(--dim);border:1px solid var(--line);border-radius:9px;
+   padding:6px 12px;cursor:pointer;font:inherit}
+ .chip.active{color:var(--text);border-color:var(--acc);background:#1d2842}
+ .chip b{color:var(--acc);margin-left:2px}
+ #cnt{color:var(--dim);font-size:12px;margin-left:auto}
 </style></head>
 <body>
 <header><h1>MultiSight3D · 资源模型画廊</h1>
 <span>外部成品模型在线展示 · 点击卡片进入单个模型的单文件 demo</span></header>
-<div class="grid">__GRID__</div>
+<div class="bar">
+ <input id="q" type="search" placeholder="🔍 搜索模型名称…" autocomplete="off"/>
+ <div class="chips">__CHIPS__</div>
+ <span id="cnt"></span>
+</div>
+<div class="grid" id="grid">__GRID__</div>
+<script>
+(function(){
+  const cards=[...document.querySelectorAll('#grid .card')];
+  const q=document.getElementById('q'), cnt=document.getElementById('cnt');
+  let filter='';
+  function apply(){
+    const kw=(q.value||'').trim().toLowerCase(); let shown=0;
+    cards.forEach(c=>{
+      const okT=!filter||c.dataset.t===filter;
+      const okQ=!kw||(c.dataset.name||'').includes(kw)||(c.textContent||'').toLowerCase().includes(kw);
+      const vis=okT&&okQ; c.style.display=vis?'':'none'; if(vis)shown++;
+    });
+    cnt.textContent='显示 '+shown+' / '+cards.length+' 个';
+  }
+  document.querySelectorAll('.chip').forEach(ch=>ch.onclick=()=>{
+    document.querySelectorAll('.chip').forEach(x=>x.classList.remove('active'));
+    ch.classList.add('active'); filter=ch.dataset.f; apply();
+  });
+  q.addEventListener('input',apply);
+  apply();
+})();
+</script>
 </body></html>"""

@@ -53,7 +53,7 @@ multisight import-asset -i "D:/path/to/模型库父目录" -o assets_out --batch
 > 💡 `import-asset` 产出的 `demo.html` 把转盘帧 / 贴图 / 元数据全部以 base64 内联，零依赖零网络，
 > 直接双击即可在浏览器打开——正合「无需部署、线上直接运行」。若 `.flt` 几何通过严格校验，
 > 还会多出「真三维」标签（three.js 走 CDN，离线自动降级为转盘）。`--batch` 还会生成画廊
-> `index.html`，汇总整个 `assets_out/` 为可一键托管的静态模型站。
+> `index.html`，汇总整个 `assets_out/` 为可一键托管的静态模型站（内置搜索与按展示类型筛选）。
 
 ## 🧱 技术栈
 

@@ -246,3 +246,31 @@ def test_server_gallery(asset_dir, tmp_path):
         assert r.status_code == 200
         assert "/api/assets/agm-x/demo" in r.text
         assert "/api/assets/agm-x/file?path=" in r.text
+
+
+# ---------------------------------------------------------------- 画廊交互 / 重导入稳健性
+
+def test_gallery_has_search_filter_ui(tmp_path):
+    out = tmp_path / "assets_out"
+    _build_asset(tmp_path / "src" / "a", "红导弹")
+    _build_asset(tmp_path / "src" / "b", "蓝鱼雷")
+    import_asset_dir(tmp_path / "src" / "a", out / "a")
+    import_asset_dir(tmp_path / "src" / "b", out / "b")
+    html = render_library_index(out, api=False)
+    assert 'id="q"' in html                     # 搜索框
+    assert "全部 <b>2</b>" in html               # 总数 chip
+    assert 'data-t="turntable"' in html          # 类型筛选属性
+    assert "显示" in html                        # 计数 JS
+    assert "http" not in html                    # 仍零网络自包含
+
+
+def test_reimport_clears_stale_frames(asset_dir, tmp_path):
+    from pathlib import Path
+    out = tmp_path / "lib" / "agm-x"
+    import_asset_dir(asset_dir, out)
+    stale = out / "sprites" / "frame_999.png"
+    stale.write_bytes(b"junk")                  # 模拟上次导入多出来的陈旧帧
+    b2 = import_asset_dir(asset_dir, out)
+    assert not stale.exists()                    # 重导入应清空重建 sprites
+    assert len(b2.sprites) == 36
+    assert all(Path(s).name.startswith("frame_0") for s in b2.sprites)
