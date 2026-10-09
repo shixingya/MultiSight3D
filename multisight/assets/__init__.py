@@ -15,7 +15,7 @@ from .library import (
     AssetBundle, scan_asset_dir, import_asset_dir, import_assets_root,
     load_asset_bundle, list_library_asset_dirs, slugify,
 )
-from .openflight import OpenFlightInfo, describe_openflight, extract_mesh
+from .openflight import OpenFlightInfo, describe_openflight, describe_ive, extract_mesh
 from .spec import parse_model_spec
 from .textures import load_image, normalize_texture
 from .demo import (
@@ -26,7 +26,7 @@ from .demo import (
 __all__ = [
     "AssetBundle", "scan_asset_dir", "import_asset_dir", "import_assets_root",
     "load_asset_bundle", "list_library_asset_dirs", "slugify",
-    "OpenFlightInfo", "describe_openflight", "extract_mesh",
+    "OpenFlightInfo", "describe_openflight", "describe_ive", "extract_mesh",
     "parse_model_spec", "load_image", "normalize_texture",
     "build_single_file_html", "render_single_file_html",
     "render_library_index", "write_library_index",

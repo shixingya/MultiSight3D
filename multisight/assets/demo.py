@@ -119,6 +119,7 @@ def render_single_file_html(bundle: AssetBundle, *, glb_path: str | None = None)
 
     meta = bundle.meta or {}
     of = bundle.openflight or {}
+    iv = bundle.performer or {}
 
     def esc(v: Any) -> str:
         return ("" if v is None else str(v)).replace("&", "&amp;").replace("<", "&lt;")
@@ -132,6 +133,9 @@ def render_single_file_html(bundle: AssetBundle, *, glb_path: str | None = None)
                        ("生成时间", "birth"), ("记录数", "record_count")):
         if of.get(key):
             rows.append(f"<tr><th>{label}(flt)</th><td>{esc(of[key])}</td></tr>")
+    if iv.get("ok"):
+        rows.append(f"<tr><th>Performer(ive)</th><td>签名 {esc(iv.get('signature'))} · "
+                    f"{esc(iv.get('size'))} 字节 · {esc(iv.get('note'))}</td></tr>")
     geom = ("✅ 几何已可靠提取，可切「真三维」" if bundle.geometry_ok
             else "⚠️ 该 .flt 为非标准导出变体，几何未通过校验 → 采用真实渲染转盘展示")
     rows.append(f"<tr><th>几何状态</th><td>{esc(geom)}</td></tr>")

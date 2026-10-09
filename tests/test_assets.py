@@ -274,3 +274,21 @@ def test_reimport_clears_stale_frames(asset_dir, tmp_path):
     assert not stale.exists()                    # 重导入应清空重建 sprites
     assert len(b2.sprites) == 36
     assert all(Path(s).name.startswith("frame_0") for s in b2.sprites)
+
+
+# ---------------------------------------------------------------- Performer .ive 指纹
+
+def test_describe_ive_signature():
+    from multisight.assets import describe_ive
+    good = bytes([4, 3, 2, 1]) + b"\x00\x00\x124" + b"\x00" * 8
+    d = describe_ive(good)
+    assert d["ok"] is True and d["size"] == len(good)
+    assert describe_ive(b"NOPE" + b"\x00" * 8)["ok"] is False
+
+
+def test_scan_detects_ive(asset_dir):
+    # 向资源目录追加一个 .ive，scan 应识别 Performer 指纹（不做几何）
+    (asset_dir / "agm.ive").write_bytes(bytes([4, 3, 2, 1]) + b"\x00\x00\x00\x01" + b"\x00" * 8)
+    b = scan_asset_dir(asset_dir)
+    assert b.performer.get("ok") is True
+    assert b.performer["size"] == 16

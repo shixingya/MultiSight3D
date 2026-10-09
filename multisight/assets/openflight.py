@@ -31,6 +31,7 @@ from typing import Any
 
 MAGIC = 0x0001
 _HEADER_LEN = 308
+_IVE_MAGIC = bytes([0x04, 0x03, 0x02, 0x01])   # SGI Performer .ive 常见开头字节序标记
 
 # opcode → 名称（覆盖常见节点/几何记录，未知记 '?'）
 OPCODES = {
@@ -112,6 +113,25 @@ def describe_openflight(path: Path | bytes | str) -> OpenFlightInfo:
         birth=birth, unix_path="", vertex_unit=unit,
         record_count=count, opcode_hist=hist,
     )
+
+
+def describe_ive(path: Path | bytes | str) -> dict[str, Any]:
+    """SGI/MultiGen Performer .ive 的诚实格式指纹（仅识别签名，不做几何解析）。
+
+    .ive 与 .flt 常为同一模型的不同封装；完整解析需 OpenSceneGraph/Performer，
+    本函数只给出“是不是 .ive + 头部前几个整数 + 文件大小”，绝不猜测几何。
+    """
+    data = _read_bytes(path)
+    if data is None or len(data) < 8:
+        return {"ok": False, "note": "文件过小或不可读"}
+    sig = data[:4]
+    known = sig == _IVE_MAGIC
+    h1 = struct.unpack_from(">I", data, 4)[0] if len(data) >= 8 else 0
+    return {
+        "ok": known, "signature": sig.hex(), "header_int": h1, "size": len(data),
+        "note": "Performer .ive 二进制场景（未做几何解析，需 OpenSceneGraph/Performer）"
+                if known else "非已知 .ive 签名",
+    }
 
 
 def extract_mesh(path: Path | bytes, *, min_tris: int = 40,

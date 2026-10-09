@@ -113,6 +113,8 @@ Butian3D 前端资产：ReconScene 资产加载位、SSE token 方案）。
 关键设计取舍：
 - **OpenFlight 是二进制记录流**（大端，每条 = u16 opcode + u16 length，4 字节对齐）；
   `describe_openflight` 解析 308 字节头 + 走记录流做 opcode 直方图，**总是**给出格式指纹。
+- **Performer `.ive` 只给诚实指纹**：`describe_ive` 校验已知签名并报告大小，不做几何猜测
+  （完整解析需 OpenSceneGraph/Performer）；与 `.flt` 一同列入元数据面板。
 - **几何提取「宁缺毋滥」**：现实导出器（尤其 **Maya 的 OpenFlight 插件**）常产出非标准变体
   ——面/顶点记录被写成空壳模板。`extract_mesh` 仅在数量与包围盒都合理（≥`min_tris`、
   span∈(0.01, 200]m、拒绝全零顶点）时才组装网格，否则返回 `None`，上层据 `geometry_ok`

@@ -20,7 +20,7 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Any
 
-from .openflight import describe_openflight, extract_mesh
+from .openflight import describe_openflight, describe_ive, extract_mesh
 from .spec import parse_model_spec
 from .textures import normalize_texture, load_image
 
@@ -39,6 +39,7 @@ class AssetBundle:
     source_dir: str
     meta: dict[str, Any] = field(default_factory=dict)
     openflight: dict[str, Any] = field(default_factory=dict)
+    performer: dict[str, Any] = field(default_factory=dict)
     geometry_ok: bool = False
     triangles: int = 0
     texture_png: str | None = None
@@ -85,6 +86,9 @@ def scan_asset_dir(folder: Path | str) -> AssetBundle:
         if mesh is not None:
             bundle.geometry_ok = True
             bundle.triangles = mesh.triangles
+    ive = next((p for p in models if p.suffix.lower() == ".ive"), None)
+    if ive:
+        bundle.performer = describe_ive(ive)
 
     # 贴图（优先匹配 spec 里的 texture_file 名）
     texs = [p for p in files if p.suffix.lower() in _TEX_EXT]
