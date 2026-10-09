@@ -502,6 +502,15 @@ def test_demo_surfaces_origin(asset_dir):
     assert "原点" in html and "世界坐标中心" in html
 
 
+def test_demo_surfaces_category(asset_dir):
+    """整库导入带分类 → 单文件 demo 元数据面板应自述所属大类。"""
+    from multisight.assets import import_asset_dir as _imp
+    out = asset_dir.parent / "lib-out"
+    b = _imp(asset_dir, out, category="战斗机")
+    html = render_single_file_html(b)
+    assert "分类" in html and "战斗机" in html
+
+
 def test_spec_texture_name_without_extension(tmp_path):
     """常见变体：docx 只写“贴图：feiji_c_01”（无扩展名）→ 也应抽出 texture_file。"""
     from multisight.assets import parse_model_spec

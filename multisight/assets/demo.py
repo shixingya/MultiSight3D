@@ -145,6 +145,9 @@ def render_single_file_html(bundle: AssetBundle, *, glb_path: str | None = None)
         return ("" if v is None else str(v)).replace("&", "&amp;").replace("<", "&lt;")
 
     rows = []
+    cat = (getattr(bundle, "category", "") or "").strip()
+    if cat:   # 整库导入时的所属大类：单文件 demo 独立分享时也能自述库分区
+        rows.append(f"<tr><th>分类</th><td>{esc(cat)}</td></tr>")
     for label, key in (("模型名称", "name"), ("三角面数", "triangles"), ("源格式", "format"),
                        ("比例尺", "scale"), ("坐标系", "coordinate_system"), ("原点", "origin"),
                        ("贴图", "texture_note")):
