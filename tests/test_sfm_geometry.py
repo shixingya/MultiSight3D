@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from multisight.sfm import estimate_fundamental, ransac_fundamental
+from multisight.sfm import estimate_fundamental, ransac_fundamental, triangulate
 
 
 def _rot(axis: str, ang: float) -> np.ndarray:
@@ -82,3 +82,21 @@ def test_estimate_requires_min_points():
     import pytest
     with pytest.raises(ValueError):
         estimate_fundamental(np.zeros((7, 2)), np.zeros((7, 2)))
+
+
+def test_triangulate_recovers_3d_points():
+    rng = np.random.default_rng(3)
+    K = np.array([[600.0, 0, 320], [0, 600.0, 240], [0, 0, 1]])
+    n = 50
+    X = np.column_stack([rng.uniform(-1, 1, n), rng.uniform(-1, 1, n), rng.uniform(3, 6, n)])
+    R = _rot("y", np.radians(8)) @ _rot("x", np.radians(5))
+    t = np.array([0.35, 0.02, 0.05])
+    P1 = K @ np.hstack([np.eye(3), np.zeros((3, 1))])
+    P2 = K @ np.hstack([R, t[:, None]])
+    def proj(P, Xw):
+        x = P @ np.hstack([Xw, np.ones((len(Xw), 1))]).T
+        return (x[:2] / x[2:3]).T
+    pts1, pts2 = proj(P1, X), proj(P2, X)
+    Xh = triangulate(P1, P2, pts1, pts2)
+    assert not np.isnan(Xh).any()
+    assert np.allclose(Xh, X, atol=1e-6)   # 精确投影→三角化应近乎复原

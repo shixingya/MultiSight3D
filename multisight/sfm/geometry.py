@@ -97,3 +97,31 @@ def ransac_fundamental(pts1: np.ndarray, pts2: np.ndarray, *,
         d = _sym_epipolar_distance(best_F, p1, p2)
         best_inliers = d < threshold
     return best_F, best_inliers
+
+
+def triangulate(P1: np.ndarray, P2: np.ndarray,
+                pts1: np.ndarray, pts2: np.ndarray) -> np.ndarray:
+    """逐点 DLT 三角化：由两视图投影矩阵 P1,P2 (3×4) 与像素对应 (N,2) 解 (N,3)。
+
+    每点用 4 个方程 (x×P₁X, y×P₁X, x×P₂X, y×P₂X) 的最小二乘解（SVD）；返回齐次归一化后的
+    欧氏坐标。退化/无穷远点（最后一维≈0）以 NaN 标记，由上层据实取舍。
+    """
+    pts1 = np.asarray(pts1, dtype=np.float64)
+    pts2 = np.asarray(pts2, dtype=np.float64)
+    n = len(pts1)
+    out = np.full((n, 3), np.nan)
+    for i in range(n):
+        u, v = pts1[i]
+        u2, v2 = pts2[i]
+        A = np.vstack([
+            u * P1[2] - P1[0],
+            v * P1[2] - P1[1],
+            u2 * P2[2] - P2[0],
+            v2 * P2[2] - P2[1],
+        ])
+        _, _, Vt = np.linalg.svd(A)
+        X = Vt[-1]
+        if abs(X[3]) < 1e-12:
+            continue
+        out[i] = X[:3] / X[3]
+    return out

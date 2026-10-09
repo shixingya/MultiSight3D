@@ -143,6 +143,8 @@ Butian3D 前端资产：ReconScene 资产加载位、SSE token 方案）。
 - **自研 SfM 内核（`multisight/sfm/`）**：遵循 PRD §11-1「完全自研」，仅依赖 numpy+Pillow（不引 OpenCV/scipy）。
   首件 `features`：Harris 角点（结构张量 + 非极大值抑制 + 间距去重）、去均值 L2 归一化的 patch 描述子、
   带 Lowe 比值测试 + 双向一致校验的暴力匹配；均经合成图单测（整数平移双图上精确恢复位移）。
+  `geometry`：归一化 8 点法基础矩阵 + rank-2 约束 + RANSAC 对称极线距离剔外点，以及逐点 DLT 三角化（两视图投影
+  矩阵→稀疏 3D 点）；由合成已知位姿双视图验证（极线约束残差、内点回收率、三角化复原精度）。
 
 ## 8. 与 PRD 里程碑映射
 
