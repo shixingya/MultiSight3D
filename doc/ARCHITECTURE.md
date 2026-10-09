@@ -154,10 +154,11 @@ Butian3D 前端资产：ReconScene 资产加载位、SSE token 方案）。
   两相机前方点过滤），`select_best_pair` 在受限候选帧对（相邻对 + 首帧对全体，线性 O(n)）中按 RANSAC 内点择优；
   `incremental_reconstruction` 以选出的最优初始对建首段两视图地图（世界系=初始帧 a、尺度由首对单位基线定），
   向未注册帧做 2D-3D 特征迁移并用 `ransac_pnp` 求绝对位姿、以内点扩展轨迹，逐帧增量注册（重叠不足/内点不够的帧
-  诚实不注册）；输出 `ReconstructionResult`（N 帧 `RegisteredCamera` + 3D 点 + 轨迹）。`stages/sfm.Real`
-  作为管线第一步对选出的最优帧对跑真实两视图重建，落 COLMAP 兼容 `cameras.txt`/
-  `images.txt`/`points3D.ply` + 诚实 `stats.json`（匹配/内点<8 或不可注册即明确报错，不静默假成功）；把 Real 从
-  两视图升级到 `incremental_reconstruction` 的 N 帧输出、及新点三角化增长 + 全局 BA 仍为后续里程碑（`stages/mvs.Real` 等仍为 `NotImplementedReal`）。
+  诚实不注册）；输出 `ReconstructionResult`（N 帧 `RegisteredCamera` + 3D 点 + 轨迹 + 共享内参 `K`）。
+  `stages/sfm.Real` 作为管线真实一步直接调 `incremental_reconstruction`，为每张注册帧落一行 COLMAP 兼容
+  `cameras.txt`/`images.txt`（初始帧恒等、其余帧由 `matrix_to_quat`）+ `points3D.ply` + 诚实 `stats.json`
+  （`registered` 反映真实注册数而非总帧数；初始两视图不可靠即明确报错，不静默假成功）；新点三角化增长
+  + 全局 BA 仍为后续里程碑（`stages/mvs.Real` 等仍为 `NotImplementedReal`）。
 
 ## 8. 与 PRD 里程碑映射
 

@@ -171,6 +171,7 @@ class ReconstructionResult:
     cameras: list[RegisteredCamera] = field(default_factory=list)
     points3d: np.ndarray = field(default_factory=lambda: np.zeros((0, 3)))
     tracks: list[dict] = field(default_factory=list)          # tid -> {frame_idx: corner_idx}
+    K: np.ndarray | None = None                                # 共享针孔内参（3×3）
     num_frames: int = 0
     num_registered: int = 0
     initial_pair: tuple[int, int] = (-1, -1)
@@ -206,6 +207,7 @@ def incremental_reconstruction(images, *, focal: float | None = None, max_corner
     two, (a, b) = init
     res.initial_pair = (a, b)
     K = default_K(grays[a].shape, focal)
+    res.K = K
     if not two.registered or two.F is None or two.num_inliers < 8:
         return res                                       # 初始对不可靠→诚实降级
 

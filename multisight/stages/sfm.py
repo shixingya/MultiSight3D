@@ -2,9 +2,10 @@
 
 Mock：按环绕轨道合成相机位姿，落盘 COLMAP 兼容目录 + 稀疏点云，
 用于打通断点续跑 / SSE / 下载全链路。
-Real：自研两视图内核（特征→匹配→F→位姿→三角化，见 multisight.sfm）已落地为管线
-第一步：在候选帧对（相邻对 + 首帧对全体）中按 RANSAC 内点择优做真实两视图重建；
-多视图增量注册 + BA 为后续里程碑。
+Real：自研 SfM 内核（特征→匹配→F→相对位姿→三角化→PnP 增量注册，见 multisight.sfm）
+已作为管线真实一步：在候选帧对（相邻对 + 首帧对全体）中按 RANSAC 内点择优建初始两视图，
+再对其余帧做 2D-3D 迁移 + RANSAC-PnP 逐帧增量注册，输出 N 帧相机/位姿。
+BA（全局束调整）为下一里程碑。
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ import time
 import numpy as np
 
 from ..pipeline import Stage, StageContext
-from ..sfm import matrix_to_quat, select_best_pair
+from ..sfm import incremental_reconstruction, matrix_to_quat
 from ._synth import (sphere_points, write_cameras_txt, write_images_txt,
                      write_ply_ascii)
 
@@ -51,71 +52,77 @@ class Mock(Stage):
 
 
 class Real(Stage):
-    """自研两视图 SfM：从候选帧对择优做真实重建并落盘 COLMAP 兼容产物。
+    """自研增量 SfM：候选帧对择优建初始两视图→逐帧 PnP 注册，落盘 COLMAP 兼容产物。
 
-    诚实原则：特征/匹配不足以建立可靠两视图时明确报错（不静默假成功）；
-    多视图增量注册 + BA 为后续里程碑。
+    诚实原则：特征/匹配不足以建立可靠初始两视图时明确报错（不静默假成功）；
+    重叠不足/内点不够的帧会诚实地不被注册（registered 反映真实注册数，非总帧数）。
+    全局 BA 为下一里程碑。
     """
 
     name = "sfm"
 
-    MAX_FRAMES = 8   # 择优时至多考察前 N 帧的特征（两视图引导足够；控制无人值守成本）
+    MAX_FRAMES = 8   # 增量注册至多考察前 N 帧（控制无人值守成本）
 
     def run(self, ctx: StageContext) -> None:
         listing = json.loads((ctx.ws.root / "images" / "list.json").read_text(encoding="utf-8"))
         photos = listing["photos"]
         if len(photos) < 2:
-            raise ValueError(f"真实两视图 SfM 至少需 2 张照片（当前预处理仅 {len(photos)} 张）")
+            raise ValueError(f"真实增量 SfM 至少需 2 张照片（当前预处理仅 {len(photos)} 张）")
         cand = photos[:self.MAX_FRAMES]
         paths = [ctx.ws.root / p["file"] for p in cand]
-        ctx.progress(self.name, 15, f"真实特征提取与匹配中：{len(cand)} 帧候选对择优")
-        res, (i, j) = select_best_pair(paths, focal=None, max_corners=800, seed=0)
-        a, b = cand[i], cand[j]
-        ctx.progress(self.name, 55, f"最优帧对 ({i},{j})：匹配 {res.num_matches} 对，RANSAC 内点 {res.num_inliers}")
-        if not res.registered or res.F is None or res.num_inliers < 8:
+        ctx.progress(self.name, 15, f"真实特征提取与增量注册中：{len(cand)} 帧")
+        res = incremental_reconstruction(paths, focal=None, max_corners=800, seed=0)
+        if not res.ok:                                    # 初始两视图不可靠/无 3D 点 → 不臆造
             raise ValueError(
-                f"未能从 {len(cand)} 帧的候选对中找到可靠两视图（最优对匹配 {res.num_matches}、内点 {res.num_inliers}）；"
-                f"请确认照片有充足重叠且清晰。当前自研 SfM 仅支持两视图引导，多视图增量注册待落地。")
+                f"未能从 {len(cand)} 帧建立可靠初始两视图（注册 {res.num_registered} 帧、"
+                f"稀疏点 {len(res.points3d)}）；请确认照片有充足重叠且清晰。")
+        a_idx, b_idx = res.initial_pair
         K = res.K
         f, cx, cy = float(K[0, 0]), float(K[0, 2]), float(K[1, 2])
-        w, h = int(a["width"]), int(a["height"])
-        self._write_cameras(ctx, f, cx, cy, w, h)
-        self._write_images(ctx, a, b, res)
+        w, h = int(cand[a_idx]["width"]), int(cand[a_idx]["height"])
+        cams = res.cameras                               # 已按 index 升序
+        self._write_cameras(ctx, len(cams), f, cx, cy, w, h)
+        self._write_images(ctx, cams, cand)
         write_ply_ascii(ctx.ws.file("sfm", "points3D.ply"), res.points3d)
-        ctx.progress(self.name, 85, f"三角化稀疏点 {len(res.points3d)} 个")
+        ctx.progress(self.name, 85,
+                     f"三角化/迁移：稀疏点 {len(res.points3d)} 个，注册 {res.num_registered}/{len(cand)} 帧")
+        b_cam = next(cm for cm in cams if cm.index == b_idx)
         stats = {
-            "engine": "real/two-view",
-            "registered": 2, "total": len(photos),
-            "register_rate": round(2 / len(photos), 4),
-            "matches": res.num_matches, "inliers": res.num_inliers,
+            "engine": "real/incremental",
+            "registered": res.num_registered, "total": len(photos),
+            "considered": len(cand),
+            "register_rate": round(res.num_registered / len(photos), 4),
+            "initial_pair": [cand[a_idx]["file"], cand[b_idx]["file"]],
+            "initial_inliers": int(b_cam.num_inliers),
             "sparse_points": int(len(res.points3d)),
-            "median_reproj_px": round(float(res.median_reproj_px), 4),
-            "camera_pair": [a["file"], b["file"]],
-            "baseline": [round(float(x), 6) for x in res.t],
-            "note": "v0.1 两视图引导：候选帧对择优的真实重建；多视图增量注册+BA 待落地",
+            "baseline": [round(float(x), 6) for x in b_cam.t],
+            "pnp_inliers": {cand[cm.index]["file"]: int(cm.num_inliers) for cm in cams
+                            if cm.index not in (a_idx, b_idx)},
+            "note": "v0.1 增量注册：候选对择优建初始两视图 + 逐帧 RANSAC-PnP；全局 BA 待落地",
         }
         (ctx.ws.root / "sfm" / "stats.json").write_text(
             json.dumps(stats, ensure_ascii=False, indent=2), encoding="utf-8")
         ctx.progress(self.name, 100,
-                     f"两视图稀疏重建完成：{len(res.points3d)} 稀疏点，内点 {res.num_inliers}")
+                     f"增量稀疏重建完成：注册 {res.num_registered}/{len(cand)} 帧，{len(res.points3d)} 稀疏点")
 
     @staticmethod
-    def _write_cameras(ctx: StageContext, f: float, cx: float, cy: float,
+    def _write_cameras(ctx: StageContext, n: int, f: float, cx: float, cy: float,
                        w: int, h: int) -> None:
         lines = ["# Camera list with one line of data per camera:",
-                 "#   CAMERA_ID, MODEL, WIDTH, HEIGHT, PARAMS[]",
-                 f"1 SIMPLE_PINHOLE {w} {h} {f:.4f} {cx:.4f} {cy:.4f}",
-                 f"2 SIMPLE_PINHOLE {w} {h} {f:.4f} {cx:.4f} {cy:.4f}"]
+                 "#   CAMERA_ID, MODEL, WIDTH, HEIGHT, PARAMS[]"]
+        for i in range(n):
+            lines.append(f"{i + 1} SIMPLE_PINHOLE {w} {h} {f:.4f} {cx:.4f} {cy:.4f}")
         ctx.ws.file("sfm", "cameras.txt").write_text("\n".join(lines) + "\n", encoding="ascii")
 
     @staticmethod
-    def _write_images(ctx: StageContext, a: dict, b: dict, res) -> None:
-        qw, qx, qy, qz = matrix_to_quat(res.R)
-        tx, ty, tz = (float(x) for x in res.t)
-        na = a["file"].split("/")[-1]
-        nb = b["file"].split("/")[-1]
+    def _write_images(ctx: StageContext, cams, cand) -> None:
         lines = ["# Image list with two lines of data per image:",
-                 "#   IMAGE_ID, QW, QX, QY, QZ, TX, TY, TZ, CAMERA_ID, NAME",
-                 f"1 1.0 0.0 0.0 0.0 0.0 0.0 0.0 1 {na}", "-1",
-                 f"2 {qw:.8f} {qx:.8f} {qy:.8f} {qz:.8f} {tx:.6f} {ty:.6f} {tz:.6f} 2 {nb}", "-1"]
+                 "#   IMAGE_ID, QW, QX, QY, QZ, TX, TY, TZ, CAMERA_ID, NAME"]
+        for k, cm in enumerate(cams):
+            qw, qx, qy, qz = matrix_to_quat(cm.R)
+            tx, ty, tz = (float(x) for x in cm.t)
+            name = cand[cm.index]["file"].split("/")[-1]
+            lines.append(f"{k + 1} {qw:.8f} {qx:.8f} {qy:.8f} {qz:.8f} "
+                         f"{tx:.6f} {ty:.6f} {tz:.6f} {k + 1} {name}")
+            lines.append("-1")
         ctx.ws.file("sfm", "images.txt").write_text("\n".join(lines) + "\n", encoding="ascii")
