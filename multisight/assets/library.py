@@ -49,6 +49,7 @@ class AssetBundle:
     model_files: list[str] = field(default_factory=list)
     glb: str | None = None
     display: str = "turntable"   # 'turntable' | 'glb' | 'texture'
+    warnings: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -124,6 +125,18 @@ def scan_asset_dir(folder: Path | str) -> AssetBundle:
         bundle.display = "turntable"
     elif bundle.preview or bundle.texture_png:
         bundle.display = "texture"
+
+    # 诚实状态：把不完整/降级情况显式列出（宁缺毋滥理念的对外展示）
+    warns: list[str] = []
+    if not bundle.meta:
+        warns.append("缺技术说明文档（docx）")
+    if not bundle.texture_png:
+        warns.append("未找到漫反射贴图")
+    if bundle.model_files and not bundle.geometry_ok:
+        warns.append("几何未通过严格校验（非标准导出）→ 回退真实渲染")
+    if not bundle.sprites:
+        warns.append("无 360° 转盘帧")
+    bundle.warnings = warns
     return bundle
 
 

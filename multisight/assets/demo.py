@@ -74,6 +74,8 @@ def render_library_index(root: Path | str, *, api: bool = False) -> str:
         pills = [disp, f"{len(b.sprites)} 帧"]
         if b.triangles:
             pills.append(f"{b.triangles} 面")
+        if b.warnings:
+            pills.append(f"⚠ {len(b.warnings)}")
         rel = _thumb_rel(folder)
         if api:
             link = f"/api/assets/{quote(folder.name)}/demo"
@@ -139,6 +141,8 @@ def render_single_file_html(bundle: AssetBundle, *, glb_path: str | None = None)
     geom = ("✅ 几何已可靠提取，可切「真三维」" if bundle.geometry_ok
             else "⚠️ 该 .flt 为非标准导出变体，几何未通过校验 → 采用真实渲染转盘展示")
     rows.append(f"<tr><th>几何状态</th><td>{esc(geom)}</td></tr>")
+    if bundle.warnings:
+        rows.append(f"<tr><th>状态提示</th><td>⚠ {esc(' · '.join(bundle.warnings))}</td></tr>")
     meta_table = "\n".join(rows)
 
     tabs = [("turntable", "🔄 360° 转盘")] if frames else []

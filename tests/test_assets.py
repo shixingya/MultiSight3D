@@ -292,3 +292,23 @@ def test_scan_detects_ive(asset_dir):
     b = scan_asset_dir(asset_dir)
     assert b.performer.get("ok") is True
     assert b.performer["size"] == 16
+
+
+# ---------------------------------------------------------------- 完整性 warnings
+
+def test_scan_warnings(asset_dir):
+    b = scan_asset_dir(asset_dir)
+    assert any("几何" in w for w in b.warnings)          # flt 几何未通过 → 提醒
+    assert not any("缺技术说明" in w for w in b.warnings)  # 完整目录不应报缺文档
+    assert not any("未找到" in w for w in b.warnings)
+
+
+def test_warnings_shown_in_gallery(tmp_path):
+    out = tmp_path / "assets_out"
+    d = _build_asset(tmp_path / "src" / "only", "裸模型")
+    (d / "三维模型技术说明.docx").unlink()             # 制造缺文档/缺贴图
+    (d / "model_c_512.tga").unlink()
+    b = import_asset_dir(d, out / "only")
+    assert any("缺技术说明" in w for w in b.warnings)
+    assert any("未找到" in w for w in b.warnings)
+    assert "⚠" in render_library_index(out)            # 画廊卡片带警示徒章
