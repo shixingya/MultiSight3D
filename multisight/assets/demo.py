@@ -88,8 +88,11 @@ def render_library_index(root: Path | str, *, api: bool = False) -> str:
         raw_title = b.name or folder.name
         title = raw_title.replace("&", "&amp;").replace("<", "&lt;")
         searchable = raw_title.lower().replace('"', "&quot;")
+        nframes = len(b.sprites)
+        ntris = int(b.triangles or 0)
         cards.append(
-            f'<a class="card" href="{link}" data-t="{b.display}" data-name="{searchable}">'
+            f'<a class="card" href="{link}" data-t="{b.display}" data-name="{searchable}" '
+            f'data-frames="{nframes}" data-tris="{ntris}">'
             f'{pic}<div class="meta">'
             f"<h3>{title}</h3><div class=\"pills\">"
             + "".join(f"<span>{p}</span>" for p in pills) + "</div></div></a>")
@@ -316,6 +319,8 @@ _INDEX_TEMPLATE = r"""<!DOCTYPE html>
    padding:6px 12px;cursor:pointer;font:inherit}
  .chip.active{color:var(--text);border-color:var(--acc);background:#1d2842}
  .chip b{color:var(--acc);margin-left:2px}
+ select.sort{background:#0f131d;color:var(--text);border:1px solid var(--line);
+   border-radius:9px;padding:7px 10px;font:inherit;cursor:pointer}
  #cnt{color:var(--dim);font-size:12px;margin-left:auto}
 </style></head>
 <body>
@@ -324,6 +329,11 @@ _INDEX_TEMPLATE = r"""<!DOCTYPE html>
 <div class="bar">
  <input id="q" type="search" placeholder="🔍 搜索模型名称…" autocomplete="off"/>
  <div class="chips">__CHIPS__</div>
+ <select id="sort" class="sort" aria-label="排序">
+   <option value="name">名称 A→Z</option>
+   <option value="frames">按帧数 ↓</option>
+   <option value="tris">按面数 ↓</option>
+ </select>
  <span id="cnt"></span>
 </div>
 <div class="grid" id="grid">__GRID__</div>
@@ -346,6 +356,17 @@ _INDEX_TEMPLATE = r"""<!DOCTYPE html>
     ch.classList.add('active'); filter=ch.dataset.f; apply();
   });
   q.addEventListener('input',apply);
+  const grid=document.getElementById('grid');
+  document.getElementById('sort').onchange=e=>{
+    const k=e.target.value;
+    const sorted=cards.slice().sort((a,b)=>{
+      if(k==='frames') return (+b.dataset.frames)-(+a.dataset.frames) || a.dataset.name.localeCompare(b.dataset.name,'zh');
+      if(k==='tris') return (+b.dataset.tris)-(+a.dataset.tris) || a.dataset.name.localeCompare(b.dataset.name,'zh');
+      return a.dataset.name.localeCompare(b.dataset.name,'zh');
+    });
+    sorted.forEach(c=>grid.appendChild(c));
+    apply();
+  };
   apply();
 })();
 </script>

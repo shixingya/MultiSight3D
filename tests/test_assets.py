@@ -269,6 +269,9 @@ def test_gallery_has_search_filter_ui(tmp_path):
     assert "全部 <b>2</b>" in html               # 总数 chip
     assert 'data-t="turntable"' in html          # 类型筛选属性
     assert "显示" in html                        # 计数 JS
+    assert 'id="sort"' in html                   # 排序下拉
+    assert 'data-frames="36"' in html            # 排序数据属性
+    assert 'data-tris=' in html
     assert "http" not in html                    # 仍零网络自包含
 
 
