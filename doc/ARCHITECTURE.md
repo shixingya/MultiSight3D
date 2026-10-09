@@ -148,7 +148,8 @@ Butian3D 前端资产：ReconScene 资产加载位、SSE token 方案）。
   （分支法、约定 w≥0，对齐 COLMAP images.txt 惯例）；均由合成已知位姿双视图验证（极线残差、内点回收、三角化
   与位姿复原精度、四元数往返）。
 - **两视图编排 + 管线接线**：`sfm/pipeline.py` 的 `two_view_reconstruction` 串起检测→匹配→F→位姿→三角化（含
-  两相机前方点过滤）；`stages/sfm.Real` 作为管线第一步对首两帧跑真实两视图重建，落 COLMAP 兼容 `cameras.txt`/
+  两相机前方点过滤），`select_best_pair` 在受限候选帧对（相邻对 + 首帧对全体，线性 O(n)）中按 RANSAC 内点择优；
+  `stages/sfm.Real` 作为管线第一步对选出的最优帧对跑真实两视图重建，落 COLMAP 兼容 `cameras.txt`/
   `images.txt`/`points3D.ply` + 诚实 `stats.json`（匹配/内点<8 或不可注册即明确报错，不静默假成功）。多视图增量
   注册 + BA 仍为后续里程碑（`stages/mvs.Real` 等仍为 `NotImplementedReal`）。
 

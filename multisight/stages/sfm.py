@@ -3,7 +3,8 @@
 Mock：按环绕轨道合成相机位姿，落盘 COLMAP 兼容目录 + 稀疏点云，
 用于打通断点续跑 / SSE / 下载全链路。
 Real：自研两视图内核（特征→匹配→F→位姿→三角化，见 multisight.sfm）已落地为管线
-第一步：对首两帧做真实两视图重建；多视图增量注册 + BA 为后续里程碑。
+第一步：在候选帧对（相邻对 + 首帧对全体）中按 RANSAC 内点择优做真实两视图重建；
+多视图增量注册 + BA 为后续里程碑。
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ import time
 import numpy as np
 
 from ..pipeline import Stage, StageContext
-from ..sfm import matrix_to_quat, two_view_reconstruction
+from ..sfm import matrix_to_quat, select_best_pair
 from ._synth import (sphere_points, write_cameras_txt, write_images_txt,
                      write_ply_ascii)
 
@@ -50,7 +51,7 @@ class Mock(Stage):
 
 
 class Real(Stage):
-    """自研两视图 SfM：对首两帧做真实重建并落盘 COLMAP 兼容产物。
+    """自研两视图 SfM：从候选帧对择优做真实重建并落盘 COLMAP 兼容产物。
 
     诚实原则：特征/匹配不足以建立可靠两视图时明确报错（不静默假成功）；
     多视图增量注册 + BA 为后续里程碑。
@@ -58,20 +59,22 @@ class Real(Stage):
 
     name = "sfm"
 
+    MAX_FRAMES = 8   # 择优时至多考察前 N 帧的特征（两视图引导足够；控制无人值守成本）
+
     def run(self, ctx: StageContext) -> None:
         listing = json.loads((ctx.ws.root / "images" / "list.json").read_text(encoding="utf-8"))
         photos = listing["photos"]
         if len(photos) < 2:
             raise ValueError(f"真实两视图 SfM 至少需 2 张照片（当前预处理仅 {len(photos)} 张）")
-        a, b = photos[0], photos[1]
-        pa = ctx.ws.root / a["file"]
-        pb = ctx.ws.root / b["file"]
-        ctx.progress(self.name, 15, "真实特征提取与匹配中：首两帧")
-        res = two_view_reconstruction(pa, pb, focal=None, max_corners=800, seed=0)
-        ctx.progress(self.name, 55, f"匹配 {res.num_matches} 对，RANSAC 内点 {res.num_inliers}")
+        cand = photos[:self.MAX_FRAMES]
+        paths = [ctx.ws.root / p["file"] for p in cand]
+        ctx.progress(self.name, 15, f"真实特征提取与匹配中：{len(cand)} 帧候选对择优")
+        res, (i, j) = select_best_pair(paths, focal=None, max_corners=800, seed=0)
+        a, b = cand[i], cand[j]
+        ctx.progress(self.name, 55, f"最优帧对 ({i},{j})：匹配 {res.num_matches} 对，RANSAC 内点 {res.num_inliers}")
         if not res.registered or res.F is None or res.num_inliers < 8:
             raise ValueError(
-                f"首两帧未能建立可靠两视图（匹配 {res.num_matches}、内点 {res.num_inliers}）；"
+                f"未能从 {len(cand)} 帧的候选对中找到可靠两视图（最优对匹配 {res.num_matches}、内点 {res.num_inliers}）；"
                 f"请确认照片有充足重叠且清晰。当前自研 SfM 仅支持两视图引导，多视图增量注册待落地。")
         K = res.K
         f, cx, cy = float(K[0, 0]), float(K[0, 2]), float(K[1, 2])
@@ -89,7 +92,7 @@ class Real(Stage):
             "median_reproj_px": round(float(res.median_reproj_px), 4),
             "camera_pair": [a["file"], b["file"]],
             "baseline": [round(float(x), 6) for x in res.t],
-            "note": "v0.1 两视图引导：首两帧真实重建；多视图增量注册+BA 待落地",
+            "note": "v0.1 两视图引导：候选帧对择优的真实重建；多视图增量注册+BA 待落地",
         }
         (ctx.ws.root / "sfm" / "stats.json").write_text(
             json.dumps(stats, ensure_ascii=False, indent=2), encoding="utf-8")

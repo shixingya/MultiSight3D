@@ -2,6 +2,8 @@
 
 这是自研 SfM 主线的「可运行内核」：给定两张有重叠/视差的图像，产出相机相对位姿
 与稀疏 3D 点——诚实反映匹配/内点质量，特征不足时返回明确的降级结果而非崩溃。
+`select_best_pair` 在受限候选帧对（相邻对 + 首帧对全体）中按 RANSAC 内点数择优，
+避免盲目取前两份导致重叠不足退化或误吃重复纹理假阳性。
 stages/sfm.Real 以此为第一步（先两视图，后续迭代扩到增量注册 + BA）。
 """
 
@@ -41,16 +43,14 @@ def default_K(shape, focal: float | None = None) -> np.ndarray:
     return np.array([[f, 0, w / 2.0], [0, f, h / 2.0], [0, 0, 1.0]])
 
 
-def two_view_reconstruction(img_a, img_b, *, focal: float | None = None,
-                            max_corners: int = 600, patch: int = 8,
-                            ratio: float = 0.8, ransac_iters: int = 300,
-                            ransac_threshold: float = 1.0,
-                            seed: int = 0) -> TwoViewResult:
-    """检测→描述→比值匹配→RANSAC F→位姿恢复→三角化。任何环节点不足都诚实降级。"""
-    ga = to_gray(img_a)
-    gb = to_gray(img_b)
-    ca, da = detect_and_describe(ga, max_corners=max_corners, patch=patch)
-    cb, db = detect_and_describe(gb, max_corners=max_corners, patch=patch)
+def two_view_from_features(ga, ca, da, gb, cb, db, *, focal: float | None = None,
+                           ratio: float = 0.8, ransac_iters: int = 300,
+                           ransac_threshold: float = 1.0,
+                           seed: int = 0) -> TwoViewResult:
+    """给定两帧已提取的角点+描述子，做比值匹配→RANSAC F→位姿恢复→三角化。
+
+    拆出此内部函数，供 select_best_pair 复用（各帧特征只算一次，不随候选对重复检测）。
+    """
     res = TwoViewResult(ok=False, num_corners_a=len(ca), num_corners_b=len(cb))
     matches = match_descriptors(da, db, ratio=ratio, mutual=True)
     res.num_matches = len(matches)
@@ -86,10 +86,60 @@ def two_view_reconstruction(img_a, img_b, *, focal: float | None = None,
         h1 = np.column_stack([p1[inliers], np.ones(res.num_inliers)])
         h2 = np.column_stack([p2[inliers], np.ones(res.num_inliers)])
         err = np.abs(np.einsum("ij,jk,ik->i", h2, Fref, h1))
-        d1 = (Fref @ h1.T)
-        den = d1[0] ** 2 + d1[1] ** 2
+        lines = Fref @ h1.T                          # 3×N：图像 2 中的极线 [a,b,c]ᵀ
+        den = lines[0] ** 2 + lines[1] ** 2
         res.median_reproj_px = float(np.median(err / np.sqrt(den + 1e-12)))
-    except (np.linalg.LinAlgError, ValueError):
+    except (ValueError, np.linalg.LinAlgError):
         pass
     res.ok = len(res.points3d) > 0
     return res
+
+
+def two_view_reconstruction(img_a, img_b, *, focal: float | None = None,
+                            max_corners: int = 600, patch: int = 8,
+                            ratio: float = 0.8, ransac_iters: int = 300,
+                            ransac_threshold: float = 1.0,
+                            seed: int = 0) -> TwoViewResult:
+    """两帧图像（路径/ndarray）→ 完整两视图重建。任何环节点不足都诚实降级。"""
+    ga = to_gray(img_a)
+    gb = to_gray(img_b)
+    ca, da = detect_and_describe(ga, max_corners=max_corners, patch=patch)
+    cb, db = detect_and_describe(gb, max_corners=max_corners, patch=patch)
+    return two_view_from_features(ga, ca, da, gb, cb, db, focal=focal, ratio=ratio,
+                                  ransac_iters=ransac_iters, ransac_threshold=ransac_threshold,
+                                  seed=seed)
+
+
+def candidate_pairs(n: int) -> list[tuple[int, int]]:
+    """受限候选帧对：相邻滑动对 (i, i+1) + 首帧对其余各帧。线性 O(n)，避免 O(n²)。"""
+    pairs: set[tuple[int, int]] = set()
+    for i in range(n - 1):
+        pairs.add((i, i + 1))
+    for j in range(2, n):
+        pairs.add((0, j))
+    return sorted(pairs)
+
+
+def select_best_pair(images, *, focal: float | None = None, max_corners: int = 600,
+                     patch: int = 8, ratio: float = 0.8, ransac_iters: int = 300,
+                     ransac_threshold: float = 1.0,
+                     seed: int = 0) -> tuple[TwoViewResult, tuple[int, int]]:
+    """在候选帧对中选 RANSAC 内点最多的一对做两视图重建。
+
+    返回 (最优结果, (i, j))。各帧特征只提取一次；若全部候选都点不足，返回内点最多的
+    那一对（其 ok/registered 仍为假，由调用方据实判断），而非硬造。
+    """
+    grays = [to_gray(im) for im in images]
+    feats = [detect_and_describe(g, max_corners=max_corners, patch=patch) for g in grays]
+    best: tuple[TwoViewResult, tuple[int, int]] | None = None
+    for (i, j) in candidate_pairs(len(grays)):
+        ca, da = feats[i]
+        cb, db = feats[j]
+        r = two_view_from_features(grays[i], ca, da, grays[j], cb, db, focal=focal,
+                                   ratio=ratio, ransac_iters=ransac_iters,
+                                   ransac_threshold=ransac_threshold, seed=seed)
+        if best is None or r.num_inliers > best[0].num_inliers:
+            best = (r, (i, j))
+    if best is None:                                     # <2 帧：无候选对
+        raise ValueError("select_best_pair 需要至少 2 张图像")
+    return best

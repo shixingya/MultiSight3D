@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from multisight.sfm import TwoViewResult, two_view_reconstruction, default_K
+from multisight.sfm import (TwoViewResult, candidate_pairs, select_best_pair,
+                            two_view_reconstruction, default_K)
 
 
 def _rot(axis: str, ang: float) -> np.ndarray:
@@ -92,3 +93,19 @@ def test_uncorrelated_images_degrade_honestly():
         assert not res.ok
     else:
         assert res.num_inliers < 8 or not res.registered
+
+
+def test_candidate_pairs_is_linear_and_deterministic():
+    assert candidate_pairs(2) == [(0, 1)]
+    assert candidate_pairs(4) == [(0, 1), (0, 2), (0, 3), (1, 2), (2, 3)]
+
+
+def test_select_best_pair_picks_the_overlapping_pair():
+    # 诱饵：首帧为无关噪声；真正的重叠对在 (1, 2)，应被择优选中
+    img_a, img_b, _, _ = _synthetic_pair()
+    rng = np.random.default_rng(0)
+    decoy = rng.random(img_a.shape) * 255
+    res, (i, j) = select_best_pair([decoy, img_a, img_b], focal=500.0,
+                                   max_corners=600, ransac_threshold=2.0, seed=0)
+    assert (i, j) == (1, 2)
+    assert res.registered and res.num_inliers >= 8

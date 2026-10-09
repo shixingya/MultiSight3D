@@ -69,7 +69,7 @@ def test_real_sfm_raises_on_uncorrelated_pair(tmp_path):
     a = rng.random((200, 200)) * 255
     b = rng.random((200, 200)) * 255
     ws = _make_ws(tmp_path, a, b)
-    with pytest.raises(ValueError, match="未能建立可靠两视图"):
+    with pytest.raises(ValueError, match="可靠两视图"):
         Real().run(_ctx(ws))
 
 
