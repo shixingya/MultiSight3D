@@ -208,7 +208,7 @@ def test_import_assets_root_skips_non_asset(tmp_path):
     out = tmp_path / "assets_out"
     results = import_assets_root(parent, out)
     assert {r[0] for r in results} == {"missile-a", "missile-b"}
-    for _, o, _b in results:
+    for _, o, _b, _sk in results:
         assert (o / "asset.json").is_file()
         assert (o / "sprites" / "frame_000.png").is_file()
     assert not (out / ".svn").exists()
@@ -220,7 +220,7 @@ def test_static_gallery_index(tmp_path):
     _build_asset(parent / "missile-a", "导弹A")
     _build_asset(parent / "missile-b", "导弹B")
     out = tmp_path / "assets_out"
-    for name, o, b in import_assets_root(parent, out):
+    for name, o, b, _sk in import_assets_root(parent, out):
         build_single_file_html(b, o / "demo.html")
     html = write_library_index(out).read_text(encoding="utf-8")
     assert "导弹A" in html and "导弹B" in html
@@ -358,3 +358,34 @@ def test_scan_picks_dds_texture(tmp_path):
     b2 = import_asset_dir(d, tmp_path / "lib" / "ddsasset")
     assert b2.texture_png.endswith("texture.png")       # 已归一化为 PNG
     assert (tmp_path / "lib" / "ddsasset" / "texture.png").is_file()
+
+
+# ---------------------------------------------------------------- 批量增量导入
+
+def test_batch_incremental_skips_unchanged(tmp_path):
+    parent = tmp_path / "library_src"
+    _build_asset(parent / "m1", "导弹1")
+    out = tmp_path / "assets_out"
+    r1 = import_assets_root(parent, out)
+    assert all(not sk for _, _, _, sk in r1)            # 首次全部实际导入
+    marker = out / "m1" / "sprites" / "MARKER.txt"
+    marker.write_text("keep")                          # 重导会先 rmtree sprites 而擦掉它
+    r2 = import_assets_root(parent, out)
+    assert all(sk for _, _, _, sk in r2)                # 未变化 → 全部跳过
+    assert marker.is_file()                             # 跳过 → 产物不被重建
+    r3 = import_assets_root(parent, out, force=True)
+    assert all(not sk for _, _, _, sk in r3)            # --force → 强制重导
+    assert not marker.exists()                          # 重导清空了陈旧帧
+
+
+def test_batch_reimport_on_source_change(tmp_path):
+    from multisight.assets import is_up_to_date
+    parent = tmp_path / "library_src"
+    d = _build_asset(parent / "m1", "导弹1")
+    out = tmp_path / "assets_out"
+    import_assets_root(parent, out)
+    assert is_up_to_date(out / "m1", d)                 # 刚导完应判定为最新
+    (d / "model_c_512.tga").write_bytes(b"x" * 5000)   # 改贴图大小 → 签名变化
+    assert not is_up_to_date(out / "m1", d)
+    r = import_assets_root(parent, out)
+    assert r[0][3] is False                             # 变化→ 重导（未跳过）

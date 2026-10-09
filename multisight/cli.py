@@ -123,18 +123,25 @@ def cmd_import_asset(args: argparse.Namespace) -> int:
     out_root = Path(args.output)
 
     if args.batch:
-        results = import_assets_root(src, out_root)
+        results = import_assets_root(src, out_root, force=args.force)
         if not results:
             print(f"未在 {src} 下找到任何资源模型子目录", file=sys.stderr)
             return 2
-        for name, out, bundle in results:
-            print(f"\n=== {name} ===")
+        n_skip = 0
+        for name, out, bundle, skipped in results:
+            tag = "（未变化，跳过重导）" if skipped else ""
+            print(f"\n=== {name} ==={tag}")
             _print_bundle(bundle, out)
-            if args.demo:
+            if skipped:
+                n_skip += 1
+            if args.demo and (not skipped or not (out / "demo.html").is_file()):
                 build_single_file_html(bundle, out / "demo.html")
         if args.demo:
             idx = write_library_index(out_root)
-            print(f"\n批量导入 {len(results)} 个资源；画廊索引（可托管/双击打开）：{idx}")
+            print(f"\n批量导入 {len(results)} 个资源（跳过 {n_skip} 个未变化）；"
+                  f"画廊索引（可托管/双击打开）：{idx}")
+        else:
+            print(f"\n批量导入 {len(results)} 个资源（跳过 {n_skip} 个未变化）。")
         return 0
 
     out = out_root / slugify(src.name)
@@ -211,7 +218,8 @@ def build_parser() -> argparse.ArgumentParser:
     ia.add_argument("-i", "--input", required=True, help="资源模型目录（--batch 时为模型库父目录）")
     ia.add_argument("-o", "--output", default="assets_out", help="归一化产物输出目录（资产库根）")
     ia.add_argument("--demo", action="store_true", help="额外生成单文件自包含 HTML demo（批量时附赠画廊 index.html）")
-    ia.add_argument("--batch", action="store_true", help="把 --input 当作父目录，逐个导入其下每个资源子目录")
+    ia.add_argument("--batch", action="store_true", help="把 --input 当作父目录，逐个导入其下每个资源子目录（默认增量：未变化的跳过）")
+    ia.add_argument("--force", action="store_true", help="批量时忽略增量判定，强制重新导入每个子目录")
     ia.set_defaults(func=cmd_import_asset)
 
     ga = sub.add_parser("gallery", help="为已导入的资产库生成可托管的静态画廊 index.html")

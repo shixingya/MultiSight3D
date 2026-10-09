@@ -19,7 +19,7 @@ MultiSight3D 追求 **「一条命令进，一个 GLB 出」**：比 COLMAP 更�
 | 网格重建 + 纹理映射，GLB/OBJ/PLY 直出 | v0.3 | ✅ mock 产物链（合法 GLB/OBJ/PLY） |
 | CLI 一键全流程 / 断点续跑 / 质量报告 | v0.1 | ✅ 已可用 |
 | WebUI：拖拽上传 / 实时进度 / 3D 预览 / 下载 | v0.1 壳 | ✅ 已可用 |
-| 外部成品模型读取（OpenFlight .flt / TGA / docx / 转盘）+ 单文件离线 demo | v0.1 旁支 | ✅ 已可用 |
+| 外部成品模型读取（OpenFlight .flt/.ive / TGA·DDS 贴图 / docx / 转盘）+ 单文件离线 demo | v0.1 旁支 | ✅ 已可用 |
 | 拍摄预检（模糊检测 / 补拍建议） | v0.4 增强 | ✅ 基础版已可用 |
 
 ## 🚀 快速开始
@@ -41,6 +41,7 @@ multisight serve --port 8050
 #   归一化落盘并生成「无需部署、双击即开」的单文件自包含 demo.html
 multisight import-asset -i "D:/path/to/模型目录" -o assets_out --demo
 #   批量：把一个「模型库父目录」下每个子目录都导入，并附赠可托管的画廊 index.html
+#   默认增量：签名未变化的模型自动跳过重导（加 --force 可强制全量重建）
 multisight import-asset -i "D:/path/to/模型库父目录" -o assets_out --batch --demo
 #   把整个 assets_out/ 丢到任意静态托管（如 GitHub Pages）或双击 index.html 即可上线
 #   为已导入的库单独重生成画廊： multisight gallery -o assets_out

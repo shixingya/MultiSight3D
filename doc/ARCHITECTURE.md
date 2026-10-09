@@ -124,7 +124,8 @@ Butian3D 前端资产：ReconScene 资产加载位、SSE token 方案）。
 - CLI `import-asset --demo` 与 WebUI「资源模型库」面板（`/api/assets` + iframe 加载
   `/api/assets/{folder}/demo`）共用同一套 `assets` 内核。
 - **批量导入 + 可托管画廊**：`import-asset --batch` 把一个「模型库父目录」下每个子目录
-  归入 `<assets_out>/<folder>/`；`--demo` 时额外生成 `assets_out/index.html`（卡片网格画廊，
+  归入 `<assets_out>/<folder>/`；默认增量——导入时记录源目录签名（相对路径+字节数），
+  未变化的子目录自动跳过重导（`--force` 强制全量）；`--demo` 时额外生成 `assets_out/index.html`（卡片网格画廊，
   相对路径引用同级 `<folder>/demo.html` 与 `<folder>/preview.png`）。整个 `assets_out/` 目录
   可直接丢到任意静态托管（如 GitHub Pages）或双击 `index.html` 打开——真正做到「无需部署、线上直接运行」。
   `multisight gallery -o assets_out` 可为已导入的库单独重生成画廊。画廊内置纯前端交互（搜索 / 按展示类型

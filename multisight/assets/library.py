@@ -14,6 +14,7 @@ asset.json 清单）落到 out_dir，供 WebUI / demo 消费。原始二进制�
 from __future__ import annotations
 
 import json
+import hashlib
 import re
 import shutil
 from dataclasses import dataclass, field, asdict
@@ -33,6 +34,26 @@ def _iter_files(root: Path) -> list[Path]:
     return [p for p in root.rglob("*") if p.is_file()]
 
 
+def _dir_signature(folder: Path) -> dict[str, Any]:
+    """目录内容指纹（相对路径 + 字节数），用于批量导入判断源资源是否变化。
+
+    不读文件内容只取大小，成本极低；能捕捉增/删/改名/体积变化（足以覆盖
+    常见「换贴图 / 换帧」编辑）。真正逐字节变化但同大小属边缘情况，可用 --force 兼顾。
+    """
+    folder = Path(folder)
+    h = hashlib.sha1()
+    n = total = 0
+    for p in sorted(_iter_files(folder), key=lambda x: x.relative_to(folder).as_posix()):
+        try:
+            sz = p.stat().st_size
+        except OSError:
+            sz = 0
+        h.update(f"{p.relative_to(folder).as_posix()}|{sz}\n".encode("utf-8"))
+        n += 1
+        total += sz
+    return {"files": n, "bytes": total, "digest": h.hexdigest()[:16]}
+
+
 @dataclass
 class AssetBundle:
     name: str
@@ -50,6 +71,7 @@ class AssetBundle:
     glb: str | None = None
     display: str = "turntable"   # 'turntable' | 'glb' | 'texture'
     warnings: list[str] = field(default_factory=list)
+    signature: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -144,6 +166,7 @@ def import_asset_dir(folder: Path | str, out_dir: Path | str) -> AssetBundle:
     """扫描 + 落盘归一化产物（贴图 PNG / 可选 GLB / asset.json）。返回带产物路径的 bundle。"""
     folder, out_dir = Path(folder), Path(out_dir)
     bundle = scan_asset_dir(folder)
+    bundle.signature = _dir_signature(folder)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # 贴图归一化为 PNG
@@ -192,6 +215,19 @@ def import_asset_dir(folder: Path | str, out_dir: Path | str) -> AssetBundle:
     (out_dir / "asset.json").write_text(
         json.dumps(_relativize(bundle, out_dir), ensure_ascii=False, indent=2), encoding="utf-8")
     return bundle
+
+
+def is_up_to_date(out_dir: Path | str, src: Path | str) -> bool:
+    """已导入产物与源目录签名一致 → 可跳过重导（供 --batch 增量）。"""
+    meta = Path(out_dir) / "asset.json"
+    if not meta.is_file():
+        return False
+    try:
+        data = json.loads(meta.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return False
+    stored = data.get("signature")
+    return bool(stored) and stored == _dir_signature(Path(src))
 
 
 def _relativize(bundle: AssetBundle, base: Path) -> dict[str, Any]:
@@ -245,19 +281,27 @@ def _looks_like_asset_dir(folder: Path) -> bool:
     return False
 
 
-def import_assets_root(parent: Path | str, out_root: Path | str) -> list[tuple[str, Path, AssetBundle]]:
+def import_assets_root(parent: Path | str, out_root: Path | str,
+                       *, force: bool = False) -> list[tuple[str, Path, AssetBundle, bool]]:
     """批量导入：把「模型库根目录」下每个子目录当作一个资源模型导入。
 
     逐个产到 <out_root>/<slug>/（asset.json + 贴图 + sprites [+ demo]），
-    跳过 .svn 等非资源目录。返回 [(源目录名, 产物目录, bundle)]。
+    跳过 .svn 等非资源目录。默认增量：签名未变化的子目录不重导（--force 强制）。
+    返回 [(源目录名, 产物目录, bundle, 是否跳过)]。
     """
     parent, out_root = Path(parent), Path(out_root)
-    results: list[tuple[str, Path, AssetBundle]] = []
+    results: list[tuple[str, Path, AssetBundle, bool]] = []
     for child in sorted(p for p in parent.iterdir() if p.is_dir()):
         if not _looks_like_asset_dir(child):
             continue
         out = out_root / slugify(child.name)
-        results.append((child.name, out, import_asset_dir(child, out)))
+        if not force and is_up_to_date(out, child):
+            try:
+                results.append((child.name, out, load_asset_bundle(out), True))
+                continue
+            except (json.JSONDecodeError, OSError, KeyError):
+                pass   # 产物不可读 → 当未导入，重新导
+        results.append((child.name, out, import_asset_dir(child, out), False))
     return results
 
 
