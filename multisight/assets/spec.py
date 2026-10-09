@@ -78,19 +78,31 @@ def parse_model_spec(path: Path | str) -> dict[str, Any]:
     if scale:
         meta["scale"] = scale
 
-    # 坐标系 / 贴图：整段扫描关键字（表格标签与值常分行，优先取含描述性关键词的那行）
+    # 坐标系 / 原点 / 贴图：表格标题与值常分行，优先取真正描述轴/手性的正文行
+    # （例：标题「坐标系与原点说明」与值「Y朝向实体正前方…符合右手定则」分属两段）
     joined = "\n".join(paras)
-    coord = next((p for p in paras if ("朝向" in p or "右手" in p) and "坐标" in p), None)
+    coord = next((p for p in paras
+                  if re.search(r"(右手定则|左手定则|朝向实体)", p)), None)
     if coord is None:
-        m = re.search(r"坐标系[^\n]*[A-Z][^\n]*", joined)
-        coord = m.group(0).strip() if m else None
+        for p in paras:
+            m = re.match(r"^\s*坐标系\s*[:：]\s*(.+)$", p.strip())
+            if m and "说明" not in m.group(1):
+                coord = m.group(1)
+                break
+    if coord is None:
+        coord = next((p for p in paras
+                      if "坐标系" in p and "说明" not in p and re.search(r"[XYZ]", p)), None)
     if coord:
-        meta["coordinate_system"] = coord
+        meta["coordinate_system"] = coord.strip()
+    origin = next((p for p in paras if "坐标原点" in p
+                   or ("原点" in p and "世界坐标" in p)), None)
+    if origin:
+        meta["origin"] = origin.strip()
     texnote = next((p for p in paras if "像素" in p or ".tga" in p.lower() or "贴图：" in p
                     or "贴图:" in p), None)
     if texnote:
         meta["texture_note"] = texnote.strip()
-    m = re.search(r"(\w+\.(?:tga|png|jpg|bmp|dds))", joined, flags=re.I)
+    m = re.search(r"([^\s/\\]+\.(?:tga|png|jpe?g|bmp|dds))", joined, flags=re.I)
     if m:
         meta["texture_file"] = m.group(1)
     return meta

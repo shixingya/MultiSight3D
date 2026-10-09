@@ -146,7 +146,8 @@ def render_single_file_html(bundle: AssetBundle, *, glb_path: str | None = None)
 
     rows = []
     for label, key in (("模型名称", "name"), ("三角面数", "triangles"), ("源格式", "format"),
-                       ("比例尺", "scale"), ("坐标系", "coordinate_system"), ("贴图", "texture_note")):
+                       ("比例尺", "scale"), ("坐标系", "coordinate_system"), ("原点", "origin"),
+                       ("贴图", "texture_note")):
         if meta.get(key):
             rows.append(f"<tr><th>{label}</th><td>{esc(meta[key])}</td></tr>")
     for label, key in (("OpenFlight 版本", "version_str"), ("顶点单位", "vertex_unit"),

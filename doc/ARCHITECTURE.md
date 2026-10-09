@@ -115,6 +115,9 @@ Butian3D 前端资产：ReconScene 资产加载位、SSE token 方案）。
   `describe_openflight` 解析 308 字节头 + 走记录流做 opcode 直方图，**总是**给出格式指纹。
 - **Performer `.ive` 只给诚实指纹**：`describe_ive` 校验已知签名并报告大小，不做几何猜测
   （完整解析需 OpenSceneGraph/Performer）；与 `.flt` 一同列入元数据面板。
+- **docx 技术说明零依赖提取**：zip 读 `word/document.xml` 按 `<w:p>` 切段，按中文字段标签取键值。
+  表格“标题/值分行”，故坐标系取真正描述轴/手性的正文行（兼容描述行不含“坐标”二字的常见变体），
+  并单独抽出“坐标原点…”行作 `origin`。（真实 52 型号：name/triangles/scale/坐标系/原点 均 100% 命中。）
 - **几何提取「宁缺毋滥」**：现实导出器（尤其 **Maya 的 OpenFlight 插件**）常产出非标准变体
   ——面/顶点记录被写成空壳模板。`extract_mesh` 仅在数量与包围盒都合理（≥`min_tris`、
   span∈(0.01, 200]m、拒绝全零顶点）时才组装网格，否则返回 `None`，上层据 `geometry_ok`

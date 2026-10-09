@@ -435,3 +435,37 @@ def test_single_category_no_filter(tmp_path):
     import_assets_root(cat_dir, out)
     html = render_library_index(out, api=False)
     assert 'id="catf"' not in html                     # 单一分类不给下拉
+
+
+# ---------------------------------------------------------------- docx 字段提取加固
+
+def test_spec_coordinate_on_separate_line(tmp_path):
+    """真实常见：描述行不带“坐标”二字（只说「…符合右手定则」），标题单独一段。"""
+    from multisight.assets import parse_model_spec
+    d = _write_docx(tmp_path / "s.docx", [
+        "坐标系与原点说明",                              # 标题（不应被当作值）
+        "Y朝向实体正前方，Z朝向实体正上方，X轴向符合右手定则。",
+        "坐标原点在世界坐标中心",
+    ])
+    meta = parse_model_spec(tmp_path / "s.docx")
+    assert "右手定则" in meta["coordinate_system"]
+    assert "实体正前方" in meta["coordinate_system"]
+    assert "世界坐标中心" in meta["origin"]
+    # 标题行不会被误当成坐标值
+    assert meta["coordinate_system"] != "坐标系与原点说明"
+
+
+def test_demo_surfaces_origin(asset_dir):
+    """带原点描述的 docx → demo 元数据面板应多出「原点」行。"""
+    _write_docx(asset_dir / "三维模型技术说明.docx", [
+        "模型名称", "带原点型号",
+        "模型面数", "1200",
+        "坐标系与原点说明",
+        "Y朝向实体正前方，符合右手定则。",
+        "坐标原点在世界坐标中心",
+    ])
+    from multisight.assets import scan_asset_dir as _scan
+    b = _scan(asset_dir)
+    assert b.meta["origin"] == "坐标原点在世界坐标中心"
+    html = render_single_file_html(b)
+    assert "原点" in html and "世界坐标中心" in html
