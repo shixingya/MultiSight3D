@@ -1,7 +1,8 @@
-"""贴图读取与归一化：TGA / BMP / DDS(受限) / PNG / JPG → PNG。
+"""贴图读取与归一化：TGA / BMP / DDS / PNG / JPG / WebP → PNG。
 
-PIL 原生支持 TGA（本项目的 agm84_c_512.tga 即 512×512 RGB 未压缩），
-无需任何第三方转换器。DDS 无法被 PIL 直读，返回 None 由上层降级处理。
+PIL 原生支持 TGA（本项目的 agm84_c_512.tga 即 512×512 RGB 未压缩）与常见 DDS
+（未压缩及 BC1/DXT1、BC3/DXT5 等，取决于 Pillow 构建），无需任何第三方转换器。
+解码失败（如罕见的 DX10 变体）时 load_image 返回 None，由上层降级处理。
 """
 
 from __future__ import annotations
@@ -10,7 +11,7 @@ from pathlib import Path
 
 from PIL import Image
 
-SUPPORTED = {".tga", ".png", ".jpg", ".jpeg", ".bmp", ".webp"}
+SUPPORTED = {".tga", ".png", ".jpg", ".jpeg", ".bmp", ".webp", ".dds"}
 
 
 def load_image(path: Path | str) -> Image.Image | None:

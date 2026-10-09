@@ -25,7 +25,7 @@ from .spec import parse_model_spec
 from .textures import normalize_texture, load_image
 
 _MODEL_EXT = {".flt", ".ive"}
-_TEX_EXT = {".tga", ".png", ".jpg", ".jpeg", ".bmp"}
+_TEX_EXT = {".tga", ".png", ".jpg", ".jpeg", ".bmp", ".webp", ".dds"}
 _SPRITE_RE = re.compile(r"^S\.(\d+)\.png$", re.I)
 
 

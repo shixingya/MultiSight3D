@@ -37,7 +37,7 @@ multisight reconstruct -i photos/ -o workspace/
 # WebUI：上传 → SSE 实时进度 → three.js 预览 → 下载
 multisight serve --port 8050
 
-# 外部成品模型（美术资源库）：读取 .flt/.ive + TGA + docx + 转盘 sprites
+# 外部成品模型（美术资源库）：读取 .flt/.ive + TGA/DDS 贴图 + docx + 转盘 sprites
 #   归一化落盘并生成「无需部署、双击即开」的单文件自包含 demo.html
 multisight import-asset -i "D:/path/to/模型目录" -o assets_out --demo
 #   批量：把一个「模型库父目录」下每个子目录都导入，并附赠可托管的画廊 index.html
@@ -70,7 +70,7 @@ multisight import-asset -i "D:/path/to/模型库父目录" -o assets_out --batch
 multisight/
 ├── pipeline.py  workspace.py  events.py  cli.py   # 状态机 / 工作区契约 / 事件总线 / CLI
 ├── stages/        # 六阶段：Mock(内置演示) + Real(自研，按里程碑替换)
-├── assets/        # 外部成品模型读取线（OpenFlight/docx/TGA/GLB/library/demo）
+├── assets/        # 外部成品模型读取线（OpenFlight/docx/TGA·DDS/GLB/library/demo）
 ├── server/        # FastAPI：任务 · SSE · 产物下载 · 资产接口
 ├── webui/         # 单页前端（上传/进度/预览/下载）
 doc/               # PRD.md · ARCHITECTURE.md

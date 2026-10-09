@@ -326,3 +326,35 @@ def test_warnings_shown_in_gallery(tmp_path):
     assert any("缺技术说明" in w for w in b.warnings)
     assert any("未找到" in w for w in b.warnings)
     assert "⚠" in render_library_index(out)            # 画廊卡片带警示徒章
+
+
+# ---------------------------------------------------------------- DDS 贴图支持
+
+def _save_dds(path, mode="RGBA", color=(200, 30, 30, 255)):
+    im = Image.new(mode, (16, 16), color)
+    try:
+        im.save(path, "DDS")
+    except (ValueError, OSError):
+        pytest.skip("此 Pillow 构建不支持 DDS")
+    return path
+
+
+def test_normalize_dds_to_png(tmp_path):
+    from multisight.assets.textures import normalize_texture
+    dds = _save_dds(tmp_path / "t.dds")
+    out = normalize_texture(dds, tmp_path / "out" / "texture.png")
+    assert out is not None and out.exists()
+    assert Image.open(out).size == (16, 16)
+
+
+def test_scan_picks_dds_texture(tmp_path):
+    # 一个只有 .flt + .dds 贴图（无 tga）的目录，scan 应把 .dds 认作漫反射贴图
+    d = tmp_path / "ddsasset"
+    (d).mkdir()
+    _write_flt(d / "m.flt")
+    _save_dds(d / "diffuse.dds")
+    b = scan_asset_dir(d)
+    assert b.texture_png and b.texture_png.lower().endswith(".dds")
+    b2 = import_asset_dir(d, tmp_path / "lib" / "ddsasset")
+    assert b2.texture_png.endswith("texture.png")       # 已归一化为 PNG
+    assert (tmp_path / "lib" / "ddsasset" / "texture.png").is_file()

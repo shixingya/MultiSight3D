@@ -28,7 +28,7 @@ multisight/
 │   ├── _synth.py     # mock 合成产物：PLY/OBJ/GLB/贴图/COLMAP 目录写出器
 │   └── preprocess.py / sfm.py / mvs.py / mesh.py / texture.py / report.py
 ├── assets/           # 外部成品模型读取线（与照片重建并行）：
-│   │                 #   openflight(.flt 识别+校验几何) / spec(docx) / textures(TGA→PNG)
+│   │                 #   openflight(.flt 识别+校验几何) / spec(docx) / textures(TGA/DDS→PNG)
 │   │                 #   glb(泛化 GLB 写出) / library(扫描·导入聚合) / demo(单文件 HTML)
 │   └── __init__.py   # scan/import/load_asset_bundle · render_single_file_html 等出口
 ├── server/           # FastAPI：任务 CRUD + SSE + 产物下载 + 资产接口 + 静态页
@@ -98,7 +98,7 @@ Butian3D 前端资产：ReconScene 资产加载位、SSE token 方案）。
 ## 7. 资源模型读取子系统（外部成品模型）
 
 与「照片 → 重建」主管线并行的一条能力线：直接读取美术资源库里的**成品模型**
-（OpenFlight `.flt` / Performer `.ive` + TGA 贴图 + docx 技术说明 + 转盘 `sprites/`），
+（OpenFlight `.flt` / Performer `.ive` + TGA/DDS 贴图 + docx 技术说明 + 转盘 `sprites/`），
 不必重新摄影测量即可展示。`multisight/assets/` 为纯读取/转换模块，产物只落 `assets_out/`，
 **原始美术二进制不入库**（延续 NFR 零二进制理念）。
 
