@@ -82,6 +82,7 @@ stage.run ──progress()──▶ Bus.publish ──▶ CLI 控制台渲染线
 | `GET /api/tasks/{id}/events` | **SSE** 实时/回放进度 |
 | `GET /api/tasks/{id}/file?path=` | 产物下载（`safe_relpath`：限定工作区内 + 后缀白名单；manifest.json 不对外） |
 | `GET /api/assets` | 资源模型库列表（扫 `<assets_dir>/*/asset.json` 摘要：folder/name/display/sprite_count） |
+| `GET /api/assets/gallery` | 资源模型画廊页（卡片网格 + 缩略图，`api=True` 链接走 `/demo` 与 `/file`） |
 | `GET /api/assets/{folder}/demo` | 现场渲染单文件自包含 HTML（转盘/贴图/元数据，data URI 内联） |
 | `GET /api/assets/{folder}/file?path=` | 资产归一化产物下载（`safe_relpath` 限定 assets 根内） |
 | `GET /`、`GET /app.js` | WebUI 静态页 |
@@ -120,6 +121,11 @@ Butian3D 前端资产：ReconScene 资产加载位、SSE token 方案）。
   demo.html 把三种模式做成可切换标签；真三维 GLB 走 CDN three.js，离线时降级提示。
 - CLI `import-asset --demo` 与 WebUI「资源模型库」面板（`/api/assets` + iframe 加载
   `/api/assets/{folder}/demo`）共用同一套 `assets` 内核。
+- **批量导入 + 可托管画廊**：`import-asset --batch` 把一个「模型库父目录」下每个子目录
+  归入 `<assets_out>/<folder>/`；`--demo` 时额外生成 `assets_out/index.html`（卡片网格画廊，
+  相对路径引用同级 `<folder>/demo.html` 与 `<folder>/preview.png`）。整个 `assets_out/` 目录
+  可直接丢到任意静态托管（如 GitHub Pages）或双击 `index.html` 打开——真正做到「无需部署、线上直接运行」。
+  `multisight gallery -o assets_out` 可为已导入的库单独重生成画廊。
 
 ## 8. 与 PRD 里程碑映射
 

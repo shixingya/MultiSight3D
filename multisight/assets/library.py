@@ -202,3 +202,45 @@ def load_asset_bundle(folder: Path | str) -> AssetBundle:
     data["sprites"] = [str(folder / s) for s in data.get("sprites", [])]
     known = {f for f in AssetBundle.__dataclass_fields__}
     return AssetBundle(**{k: v for k, v in data.items() if k in known})
+
+
+def slugify(name: str) -> str:
+    """把目录名洗成文件系统/URL 安全的子目录名（保留中文，去非法字符）。"""
+    return re.sub(r'[\\/:*?"<>|]', "_", name).strip() or "asset"
+
+
+def _looks_like_asset_dir(folder: Path) -> bool:
+    """子树里只要出现模型/贴图/docx/转盘帧之一，就视为一个资源模型目录。"""
+    if not folder.is_dir():
+        return False
+    for p in _iter_files(folder):
+        ext = p.suffix.lower()
+        if ext in _MODEL_EXT or ext in _TEX_EXT or ext == ".docx":
+            return True
+        if _SPRITE_RE.match(p.name):
+            return True
+    return False
+
+
+def import_assets_root(parent: Path | str, out_root: Path | str) -> list[tuple[str, Path, AssetBundle]]:
+    """批量导入：把「模型库根目录」下每个子目录当作一个资源模型导入。
+
+    逐个产到 <out_root>/<slug>/（asset.json + 贴图 + sprites [+ demo]），
+    跳过 .svn 等非资源目录。返回 [(源目录名, 产物目录, bundle)]。
+    """
+    parent, out_root = Path(parent), Path(out_root)
+    results: list[tuple[str, Path, AssetBundle]] = []
+    for child in sorted(p for p in parent.iterdir() if p.is_dir()):
+        if not _looks_like_asset_dir(child):
+            continue
+        out = out_root / slugify(child.name)
+        results.append((child.name, out, import_asset_dir(child, out)))
+    return results
+
+
+def list_library_asset_dirs(out_root: Path | str) -> list[Path]:
+    """列出资产库根下已导入（含 asset.json）的子目录。"""
+    root = Path(out_root)
+    if not root.is_dir():
+        return []
+    return sorted(p for p in root.iterdir() if (p / "asset.json").is_file())

@@ -96,21 +96,7 @@ def cmd_report(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_import_asset(args: argparse.Namespace) -> int:
-    """读取外部资源模型目录（OpenFlight/TGA/docx/sprites），归一化落盘并可生成单文件 demo。
-
-    --output 是「资产库根目录」：每个资源按源目录名归入 <output>/<folder>/，
-    与 server /api/assets 的 <folder>/asset.json 约定一致。
-    """
-    import re
-    from .assets import import_asset_dir, build_single_file_html
-    src = Path(args.input)
-    if not src.is_dir():
-        print(f"资源目录不存在：{src}", file=sys.stderr)
-        return 2
-    slug = re.sub(r'[\\/:*?"<>|]', "_", src.name).strip() or "asset"
-    out = Path(args.output) / slug
-    bundle = import_asset_dir(src, out)
+def _print_bundle(bundle, out: Path) -> None:
     print(f"资源模型：{bundle.name}")
     print(f"  展示模式：{bundle.display}  几何校验：{'通过' if bundle.geometry_ok else '未通过（回退真实渲染）'}")
     if bundle.meta.get("triangles"):
@@ -119,10 +105,59 @@ def cmd_import_asset(args: argparse.Namespace) -> int:
         print(f"  OpenFlight：v{bundle.openflight['version_str']}  单位 {bundle.openflight.get('vertex_unit', '-')}")
     print(f"  贴图：{'✓' if bundle.texture_png else '✗'}  转盘帧：{len(bundle.sprites)}  GLB：{bundle.glb or '—'}")
     print(f"  产物目录：{out}")
+
+
+def cmd_import_asset(args: argparse.Namespace) -> int:
+    """读取外部资源模型目录（OpenFlight/TGA/docx/sprites），归一化落盘并可生成单文件 demo。
+
+    --output 是「资产库根目录」：每个资源按源目录名归入 <output>/<folder>/，
+    与 server /api/assets 的 <folder>/asset.json 约定一致。--batch 把 --input 当作
+    「模型库父目录」，逐个导入其下每个资源子目录，--demo 时额外生成画廊 index.html。
+    """
+    from .assets import (import_asset_dir, import_assets_root, build_single_file_html,
+                         write_library_index, slugify)
+    src = Path(args.input)
+    if not src.is_dir():
+        print(f"资源目录不存在：{src}", file=sys.stderr)
+        return 2
+    out_root = Path(args.output)
+
+    if args.batch:
+        results = import_assets_root(src, out_root)
+        if not results:
+            print(f"未在 {src} 下找到任何资源模型子目录", file=sys.stderr)
+            return 2
+        for name, out, bundle in results:
+            print(f"\n=== {name} ===")
+            _print_bundle(bundle, out)
+            if args.demo:
+                build_single_file_html(bundle, out / "demo.html")
+        if args.demo:
+            idx = write_library_index(out_root)
+            print(f"\n批量导入 {len(results)} 个资源；画廊索引（可托管/双击打开）：{idx}")
+        return 0
+
+    out = out_root / slugify(src.name)
+    bundle = import_asset_dir(src, out)
+    _print_bundle(bundle, out)
     if args.demo:
         demo_path = out / "demo.html"
         build_single_file_html(bundle, demo_path)
         print(f"\n单文件 demo（双击即开，离线可运行）：{demo_path}")
+    return 0
+
+
+def cmd_gallery(args: argparse.Namespace) -> int:
+    """为已导入的资产库根目录生成可托管的静态画廊 index.html。"""
+    from .assets import write_library_index, list_library_asset_dirs
+    out_root = Path(args.output)
+    if not out_root.is_dir():
+        print(f"资产库目录不存在：{out_root}", file=sys.stderr)
+        return 2
+    n = len(list_library_asset_dirs(out_root))
+    idx = write_library_index(out_root)
+    print(f"已为 {n} 个资源模型生成画廊：{idx}")
+    print("把整个目录丢到静态托管（如 GitHub Pages）或直接双击 index.html 即可线上/本地运行。")
     return 0
 
 
@@ -173,10 +208,15 @@ def build_parser() -> argparse.ArgumentParser:
     st.set_defaults(func=cmd_stages)
 
     ia = sub.add_parser("import-asset", help="读取外部资源模型目录（OpenFlight/TGA/docx/sprites）")
-    ia.add_argument("-i", "--input", required=True, help="资源模型目录")
-    ia.add_argument("-o", "--output", default="assets_out", help="归一化产物输出目录")
-    ia.add_argument("--demo", action="store_true", help="额外生成单文件自包含 HTML demo")
+    ia.add_argument("-i", "--input", required=True, help="资源模型目录（--batch 时为模型库父目录）")
+    ia.add_argument("-o", "--output", default="assets_out", help="归一化产物输出目录（资产库根）")
+    ia.add_argument("--demo", action="store_true", help="额外生成单文件自包含 HTML demo（批量时附赠画廊 index.html）")
+    ia.add_argument("--batch", action="store_true", help="把 --input 当作父目录，逐个导入其下每个资源子目录")
     ia.set_defaults(func=cmd_import_asset)
+
+    ga = sub.add_parser("gallery", help="为已导入的资产库生成可托管的静态画廊 index.html")
+    ga.add_argument("-o", "--output", default="assets_out", help="资产库根目录")
+    ga.set_defaults(func=cmd_gallery)
 
     sv = sub.add_parser("serve", help="启动 WebUI（上传/任务/SSE 进度/预览）")
     sv.add_argument("--host", default="127.0.0.1")

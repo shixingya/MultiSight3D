@@ -13,10 +13,12 @@
 from __future__ import annotations
 
 import base64
+import json
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
-from .library import AssetBundle
+from .library import AssetBundle, load_asset_bundle, list_library_asset_dirs
 
 
 def _b64(path: str | None) -> str | None:
@@ -35,6 +37,64 @@ def build_single_file_html(bundle: AssetBundle, out_path: Path | str,
     out = Path(out_path)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(render_single_file_html(bundle, glb_path=glb_path), encoding="utf-8")
+    return out
+
+
+def _thumb_rel(folder: Path) -> str | None:
+    """为画廊卡片选一张相对 folder 的缩略图（preview > structure > 首帧 > texture）。"""
+    for cand in ("preview.png", "structure.png"):
+        if (folder / cand).is_file():
+            return cand
+    sp = folder / "sprites"
+    if sp.is_dir():
+        frames = sorted(sp.iterdir())
+        if frames:
+            return f"sprites/{frames[0].name}"
+    if (folder / "texture.png").is_file():
+        return "texture.png"
+    return None
+
+
+def render_library_index(root: Path | str, *, api: bool = False) -> str:
+    """渲染资源模型画廊 index.html（卡片网格 + 缩略图 + 链接到每个资产的 demo）。
+
+    - api=False（静态托管 / 本地双击）：链接 <folder>/demo.html，缩略图 <folder>/<rel>（相对路径）；
+    - api=True（Web 服务内）：链接 /api/assets/<folder>/demo，缩略图 /api/assets/<folder>/file?path=<rel>。
+    """
+    root = Path(root)
+    cards = []
+    for folder in list_library_asset_dirs(root):
+        try:
+            b = load_asset_bundle(folder)
+        except (json.JSONDecodeError, OSError, KeyError):
+            continue
+        disp = {"glb": "真三维", "turntable": "转盘", "texture": "贴图"}.get(b.display, b.display)
+        pills = [disp, f"{len(b.sprites)} 帧"]
+        if b.triangles:
+            pills.append(f"{b.triangles} 面")
+        rel = _thumb_rel(folder)
+        if api:
+            link = f"/api/assets/{quote(folder.name)}/demo"
+            thumb = f"/api/assets/{quote(folder.name)}/file?path={quote(rel)}" if rel else ""
+        else:
+            link = f"{quote(folder.name)}/demo.html"
+            thumb = f"{quote(folder.name)}/{quote(rel)}" if rel else ""
+        pic = (f'<img loading="lazy" src="{thumb}" alt=""/>' if thumb
+               else '<div class="noimg">无预览图</div>')
+        title = (b.name or folder.name).replace("&", "&amp;").replace("<", "&lt;")
+        cards.append(
+            f'<a class="card" href="{link}">{pic}<div class="meta">'
+            f"<h3>{title}</h3><div class=\"pills\">"
+            + "".join(f"<span>{p}</span>" for p in pills) + "</div></div></a>")
+    grid = "\n".join(cards) or '<p class="empty">暂无资源模型，先用 import-asset 导入。</p>'
+    return _INDEX_TEMPLATE.replace("__GRID__", grid)
+
+
+def write_library_index(root: Path | str, out_path: Path | str | None = None) -> Path:
+    """把静态画廊写到 <root>/index.html（可整个目录丢到任意静态托管 / GitHub Pages）。"""
+    root = Path(root)
+    out = Path(out_path) if out_path else root / "index.html"
+    out.write_text(render_library_index(root, api=False), encoding="utf-8")
     return out
 
 
@@ -193,4 +253,34 @@ async function initGLB(){
   addEventListener('resize',()=>{renderer.setSize(box.clientWidth,box.clientHeight);cam.aspect=box.clientWidth/box.clientHeight;cam.updateProjectionMatrix();});
 }
 </script>
+</body></html>"""
+
+
+_INDEX_TEMPLATE = r"""<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>MultiSight3D · 资源模型画廊</title>
+<style>
+ :root{--bg:#0b0d12;--panel:#141824;--line:#232a3d;--text:#dde4f2;--dim:#8b95ad;--acc:#5b8def}
+ *{box-sizing:border-box;margin:0}
+ body{background:var(--bg);color:var(--text);font:14px/1.6 "Segoe UI",system-ui,sans-serif;min-height:100vh}
+ header{padding:20px 28px;border-bottom:1px solid var(--line)}
+ header h1{font-size:20px} header span{color:var(--dim);font-size:12px}
+ .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:18px;padding:24px 28px}
+ a.card{display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--line);
+   border-radius:14px;overflow:hidden;text-decoration:none;color:inherit;transition:transform .12s,border-color .12s}
+ a.card:hover{transform:translateY(-3px);border-color:var(--acc)}
+ a.card img{width:100%;height:150px;object-fit:cover;background:#0a0c11;display:block}
+ .noimg{width:100%;height:150px;display:grid;place-items:center;color:var(--dim);background:#10151f}
+ .meta{padding:12px 14px}
+ .meta h3{font-size:14px;font-weight:600;margin-bottom:8px;word-break:break-all}
+ .pills{display:flex;flex-wrap:wrap;gap:6px}
+ .pills span{background:#1b2233;color:var(--dim);border:1px solid var(--line);border-radius:6px;
+   padding:2px 8px;font-size:11px}
+ .empty{color:var(--dim);padding:40px 28px}
+</style></head>
+<body>
+<header><h1>MultiSight3D · 资源模型画廊</h1>
+<span>外部成品模型在线展示 · 点击卡片进入单个模型的单文件 demo</span></header>
+<div class="grid">__GRID__</div>
 </body></html>"""

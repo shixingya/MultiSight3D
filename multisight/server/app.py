@@ -186,6 +186,11 @@ def create_app() -> FastAPI:
                             "sprite_count": len(d.get("sprites", []))})
         return {"assets": out}
 
+    @app.get("/api/assets/gallery")
+    def assets_gallery():
+        from ..assets import render_library_index
+        return HTMLResponse(render_library_index(Path(_assets_dir), api=True))
+
     @app.get("/api/assets/{folder}/demo")
     def asset_demo(folder: str):
         from ..assets import load_asset_bundle, render_single_file_html

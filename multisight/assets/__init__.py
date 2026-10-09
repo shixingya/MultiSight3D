@@ -11,15 +11,23 @@
 
 from __future__ import annotations
 
-from .library import AssetBundle, scan_asset_dir, import_asset_dir, load_asset_bundle
+from .library import (
+    AssetBundle, scan_asset_dir, import_asset_dir, import_assets_root,
+    load_asset_bundle, list_library_asset_dirs, slugify,
+)
 from .openflight import OpenFlightInfo, describe_openflight, extract_mesh
 from .spec import parse_model_spec
 from .textures import load_image, normalize_texture
-from .demo import build_single_file_html, render_single_file_html
+from .demo import (
+    build_single_file_html, render_single_file_html,
+    render_library_index, write_library_index,
+)
 
 __all__ = [
-    "AssetBundle", "scan_asset_dir", "import_asset_dir", "load_asset_bundle",
+    "AssetBundle", "scan_asset_dir", "import_asset_dir", "import_assets_root",
+    "load_asset_bundle", "list_library_asset_dirs", "slugify",
     "OpenFlightInfo", "describe_openflight", "extract_mesh",
     "parse_model_spec", "load_image", "normalize_texture",
     "build_single_file_html", "render_single_file_html",
+    "render_library_index", "write_library_index",
 ]

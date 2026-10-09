@@ -40,6 +40,10 @@ multisight serve --port 8050
 # 外部成品模型（美术资源库）：读取 .flt/.ive + TGA + docx + 转盘 sprites
 #   归一化落盘并生成「无需部署、双击即开」的单文件自包含 demo.html
 multisight import-asset -i "D:/path/to/模型目录" -o assets_out --demo
+#   批量：把一个「模型库父目录」下每个子目录都导入，并附赠可托管的画廊 index.html
+multisight import-asset -i "D:/path/to/模型库父目录" -o assets_out --batch --demo
+#   把整个 assets_out/ 丢到任意静态托管（如 GitHub Pages）或双击 index.html 即可上线
+#   为已导入的库单独重生成画廊： multisight gallery -o assets_out
 #   serve 时自动把 assets_out/ 作为「资源模型库」呈现（--assets-dir 可改）
 ```
 
@@ -48,7 +52,8 @@ multisight import-asset -i "D:/path/to/模型目录" -o assets_out --demo
 
 > 💡 `import-asset` 产出的 `demo.html` 把转盘帧 / 贴图 / 元数据全部以 base64 内联，零依赖零网络，
 > 直接双击即可在浏览器打开——正合「无需部署、线上直接运行」。若 `.flt` 几何通过严格校验，
-> 还会多出「真三维」标签（three.js 走 CDN，离线自动降级为转盘）。
+> 还会多出「真三维」标签（three.js 走 CDN，离线自动降级为转盘）。`--batch` 还会生成画廊
+> `index.html`，汇总整个 `assets_out/` 为可一键托管的静态模型站。
 
 ## 🧱 技术栈
 
