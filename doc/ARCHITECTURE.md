@@ -128,7 +128,8 @@ Butian3D 前端资产：ReconScene 资产加载位、SSE token 方案）。
   相对路径引用同级 `<folder>/demo.html` 与 `<folder>/preview.png`）。整个 `assets_out/` 目录
   可直接丢到任意静态托管（如 GitHub Pages）或双击 `index.html` 打开——真正做到「无需部署、线上直接运行」。
   `multisight gallery -o assets_out` 可为已导入的库单独重生成画廊。画廊内置纯前端交互（搜索 / 按展示类型
-  筛选 / 按名称、帧数、面数排序 + 实时计数），不引入任何网络依赖，保持目录站自包含。
+  筛选 / 按名称、帧数、面数排序 + 实时计数）；当前视图状态经 `history.replaceState` 写入 URL hash
+  （并监听 `hashchange`），因此可分享带筛选的固定链接；全程零依赖零网络，保持目录站自包含。
 
 ## 8. 与 PRD 里程碑映射
 

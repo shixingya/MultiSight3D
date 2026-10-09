@@ -337,10 +337,15 @@ _INDEX_TEMPLATE = r"""<!DOCTYPE html>
  <span id="cnt"></span>
 </div>
 <div class="grid" id="grid">__GRID__</div>
+<p class="empty" id="nores" hidden>没有匹配的模型，试试清空搜索或切换筛选。</p>
 <script>
 (function(){
   const cards=[...document.querySelectorAll('#grid .card')];
+  const grid=document.getElementById('grid');
   const q=document.getElementById('q'), cnt=document.getElementById('cnt');
+  const nores=document.getElementById('nores');
+  const sel=document.getElementById('sort');
+  const chips=[...document.querySelectorAll('.chip')];
   let filter='';
   function apply(){
     const kw=(q.value||'').trim().toLowerCase(); let shown=0;
@@ -350,23 +355,48 @@ _INDEX_TEMPLATE = r"""<!DOCTYPE html>
       const vis=okT&&okQ; c.style.display=vis?'':'none'; if(vis)shown++;
     });
     cnt.textContent='显示 '+shown+' / '+cards.length+' 个';
+    nores.hidden = shown>0 || cards.length===0;
   }
-  document.querySelectorAll('.chip').forEach(ch=>ch.onclick=()=>{
-    document.querySelectorAll('.chip').forEach(x=>x.classList.remove('active'));
-    ch.classList.add('active'); filter=ch.dataset.f; apply();
-  });
-  q.addEventListener('input',apply);
-  const grid=document.getElementById('grid');
-  document.getElementById('sort').onchange=e=>{
-    const k=e.target.value;
+  function doSort(k){
     const sorted=cards.slice().sort((a,b)=>{
       if(k==='frames') return (+b.dataset.frames)-(+a.dataset.frames) || a.dataset.name.localeCompare(b.dataset.name,'zh');
       if(k==='tris') return (+b.dataset.tris)-(+a.dataset.tris) || a.dataset.name.localeCompare(b.dataset.name,'zh');
       return a.dataset.name.localeCompare(b.dataset.name,'zh');
     });
     sorted.forEach(c=>grid.appendChild(c));
-    apply();
-  };
+  }
+  function syncHash(){
+    const p=new URLSearchParams();
+    if(q.value) p.set('q',q.value);
+    if(filter) p.set('t',filter);
+    if(sel.value&&sel.value!=='name') p.set('sort',sel.value);
+    const h=p.toString();
+    try{
+      history.replaceState(null,'',h?('#'+h):location.pathname+location.search);
+    }catch(e){ location.hash=h; }   // file:// 下 replaceState 部分浏览器抛错，退而直写 hash
+  }
+  chips.forEach(ch=>ch.onclick=()=>{
+    chips.forEach(x=>x.classList.remove('active'));
+    ch.classList.add('active'); filter=ch.dataset.f; apply(); syncHash();
+  });
+  q.addEventListener('input',()=>{apply(); syncHash();});
+  sel.onchange=e=>{doSort(e.target.value); apply(); syncHash();};
+  // 从 URL hash 恢复搜索/筛选/排序，便于分享带状态的固定链接
+  function restore(){
+    const p=new URLSearchParams(location.hash.slice(1));
+    if(p.has('q')) q.value=p.get('q');
+    if(p.has('sort')){ sel.value=p.get('sort'); doSort(sel.value); }
+    else{ sel.value='name'; doSort('name'); }   // 与 filter 对称：无 sort 参数则复位按名称
+    if(p.has('t')){
+      filter=p.get('t');
+      chips.forEach(x=>x.classList.toggle('active', x.dataset.f===filter));
+    }else{
+      filter='';
+      chips.forEach(x=>x.classList.toggle('active', x.dataset.f===''));
+    }
+  }
+  restore();
+  addEventListener('hashchange',()=>{restore(); apply();});  // 站内前进/后退、手改 hash 也能恢复
   apply();
 })();
 </script>

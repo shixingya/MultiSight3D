@@ -272,6 +272,9 @@ def test_gallery_has_search_filter_ui(tmp_path):
     assert 'id="sort"' in html                   # 排序下拉
     assert 'data-frames="36"' in html            # 排序数据属性
     assert 'data-tris=' in html
+    assert "syncHash" in html and "location.hash" in html  # 可分享状态（URL hash）
+    assert 'id="nores"' in html                    # 无匹配空态
+    assert "hashchange" in html                    # 前进/后退也能恢复
     assert "http" not in html                    # 仍零网络自包含
 
 
