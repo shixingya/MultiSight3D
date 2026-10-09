@@ -17,6 +17,7 @@ from .geometry import (estimate_fundamental, ransac_fundamental, triangulate,
 from .pipeline import (ReconstructionResult, RegisteredCamera, TwoViewResult, candidate_pairs,
                        default_K, incremental_reconstruction, select_best_pair,
                        two_view_reconstruction)
+from .bundle import bundle_adjustment, mean_reprojection_error
 
 __all__ = [
     "Corner", "detect_corners", "describe", "detect_and_describe",
@@ -26,4 +27,5 @@ __all__ = [
     "TwoViewResult", "default_K", "two_view_reconstruction",
     "candidate_pairs", "select_best_pair",
     "ReconstructionResult", "RegisteredCamera", "incremental_reconstruction",
+    "bundle_adjustment", "mean_reprojection_error",
 ]

@@ -157,8 +157,12 @@ Butian3D 前端资产：ReconScene 资产加载位、SSE token 方案）。
   诚实不注册）；输出 `ReconstructionResult`（N 帧 `RegisteredCamera` + 3D 点 + 轨迹 + 共享内参 `K`）。
   `stages/sfm.Real` 作为管线真实一步直接调 `incremental_reconstruction`，为每张注册帧落一行 COLMAP 兼容
   `cameras.txt`/`images.txt`（初始帧恒等、其余帧由 `matrix_to_quat`）+ `points3D.ply` + 诚实 `stats.json`
-  （`registered` 反映真实注册数而非总帧数；初始两视图不可靠即明确报错，不静默假成功）；新点三角化增长
-  + 全局 BA 仍为后续里程碑（`stages/mvs.Real` 等仍为 `NotImplementedReal`）。
+  （`registered` 反映真实注册数而非总帧数；初始两视图不可靠即明确报错，不静默假成功）。
+- **全局捆绑调整（`sfm/bundle.py`）**：`bundle_adjustment` 以 Levenberg-Marquardt 在「各相机 6 自由度（左扰动 exp）
+  + 各 3D 点 3 自由度」上联合最小化总重投影 SSE（`mean_reprojection_error` 为质量指标）；解析雅可比（相机块
+  `dpx@[-[RX]×|I]`、点块 `dpx@R`）经数值有限差分验证，带阻尼与单调接受保护；完全固定首相机以消除 7 自由度规范歧义。
+  合成场景上从扰动初值回落到真值 basin（均重投影 <1e-4 px）。接入增量注册输出与 Real 阶段为下一里程碑（新点三角化
+  增长也待落地；`stages/mvs.Real` 等仍为 `NotImplementedReal`）。
 
 ## 8. 与 PRD 里程碑映射
 
