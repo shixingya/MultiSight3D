@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from multisight.sfm import estimate_fundamental, ransac_fundamental, triangulate, recover_pose, matrix_to_quat
+from multisight.sfm import (estimate_fundamental, ransac_fundamental, triangulate,
+                            recover_pose, solve_pnp_dlt, matrix_to_quat)
 
 
 def _rot(axis: str, ang: float) -> np.ndarray:
@@ -126,6 +127,28 @@ def test_recover_pose_matches_ground_truth():
     # 单对视图尺度不可观：t 归一→重建缩放 1/|t|，应与真值成比例
     scale = 1.0 / np.linalg.norm(t)
     assert np.allclose(X_rec, X * scale, atol=1e-4)
+
+
+def test_solve_pnp_dlt_recovers_absolute_pose():
+    rng = np.random.default_rng(21)
+    K = np.array([[600.0, 0, 320], [0, 600.0, 240], [0, 0, 1]])
+    n = 30
+    X = np.column_stack([rng.uniform(-1, 1, n), rng.uniform(-1, 1, n), rng.uniform(3, 6, n)])
+    R = _rot("y", np.radians(12)) @ _rot("x", np.radians(-7))
+    t = np.array([0.2, -0.1, 0.35])
+    P = np.hstack([R, t[:, None]])
+    x = K @ (P @ np.hstack([X, np.ones((n, 1))]).T)
+    pts = (x[:2] / x[2:3]).T
+    R_rec, t_rec = solve_pnp_dlt(K, X, pts)
+    assert np.allclose(R_rec, R, atol=1e-6)          # 精确投影→旋转复原
+    assert np.allclose(t_rec, t, atol=1e-6)          # PnP 尺度已知→平移含模长
+
+
+def test_solve_pnp_requires_min_points():
+    import pytest
+    K = np.eye(3)
+    with pytest.raises(ValueError):
+        solve_pnp_dlt(K, np.zeros((5, 3)), np.zeros((5, 2)))
 
 
 def _quat_to_matrix(q):

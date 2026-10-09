@@ -12,7 +12,7 @@ from .features import (
     Corner, detect_corners, describe, detect_and_describe, match_descriptors, to_gray,
 )
 from .geometry import (estimate_fundamental, ransac_fundamental, triangulate,
-                       recover_pose, matrix_to_quat)
+                       recover_pose, solve_pnp_dlt, matrix_to_quat)
 from .pipeline import (TwoViewResult, candidate_pairs, default_K, select_best_pair,
                        two_view_reconstruction)
 
@@ -20,7 +20,7 @@ __all__ = [
     "Corner", "detect_corners", "describe", "detect_and_describe",
     "match_descriptors", "to_gray",
     "estimate_fundamental", "ransac_fundamental", "triangulate", "recover_pose",
-    "matrix_to_quat",
+    "solve_pnp_dlt", "matrix_to_quat",
     "TwoViewResult", "default_K", "two_view_reconstruction",
     "candidate_pairs", "select_best_pair",
 ]

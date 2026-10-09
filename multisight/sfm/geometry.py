@@ -167,6 +167,51 @@ def recover_pose(F: np.ndarray, K: np.ndarray, pts1: np.ndarray, pts2: np.ndarra
     return best[1], best[2], best[3]
 
 
+def _project_to_so3(R: np.ndarray) -> np.ndarray:
+    """把任意 3×3 投影到最近旋转（SVD 极分解），强制右手系 det=+1。"""
+    U, _S, Vt = np.linalg.svd(R)
+    D = np.diag([1.0, 1.0, np.sign(np.linalg.det(U @ Vt))])
+    return U @ D @ Vt
+
+
+def solve_pnp_dlt(K: np.ndarray, points3d: np.ndarray, points2d: np.ndarray
+                  ) -> tuple[np.ndarray, np.ndarray]:
+    """已知 3D 点 (N,3) + 对应像素 (N,2) + 内参 K，线性 DLT 解相机位姿 [R|t]。
+
+    约定世界系→相机系 x = K [R|t] X（需 ≥6 对、非退化）。归一化像素 xn=K⁻¹x̃ 后按
+    xn×(M X̃)=0 组 2N×12 零空间；由 det(M₃) 定尺度符号 λ（det(λR)=λ³），R=M₃/λ 投影到 SO(3)，
+    t=M[:,3]/λ。病态/退化抛 ValueError。PnP 中 3D 结构尺度已知，故 t 的模长有意义（区别于两视图）。
+    """
+    X = np.asarray(points3d, dtype=np.float64)
+    x = np.asarray(points2d, dtype=np.float64)
+    K = np.asarray(K, dtype=np.float64)
+    n = len(X)
+    if n < 6 or len(x) != n:
+        raise ValueError("solve_pnp_dlt 需要 ≥6 对 2D-3D 对应")
+    Kinv = np.linalg.inv(K)
+    hx = np.column_stack([x[:, 0], x[:, 1], np.ones(n)])
+    nx = (Kinv @ hx.T).T
+    nx = nx[:, :2] / nx[:, 2:3]                       # 归一化像面 (u', v')
+    Xh = np.column_stack([X, np.ones(n)])             # (n,4)
+    z = np.zeros(4)
+    A = np.empty((2 * n, 12))
+    for i in range(n):
+        u, v = nx[i]
+        A[2 * i] = np.concatenate([Xh[i], z, -u * Xh[i]])       # m₁·X̃ - u·m₃·X̃
+        A[2 * i + 1] = np.concatenate([z, Xh[i], -v * Xh[i]])   # m₂·X̃ - v·m₃·X̃
+    _, _, Vt = np.linalg.svd(A)
+    m = Vt[-1]
+    M = m.reshape(3, 4)                               # 行 m₁,m₂,m₃ = λ[R|t]
+    M3 = M[:, :3]
+    det = np.linalg.det(M3)
+    if abs(det) < 1e-12:
+        raise ValueError("solve_pnp_dlt：退化构型（无法定尺度）")
+    lam = np.copysign(np.abs(det) ** (1.0 / 3.0), det)          # λ³=det(λR)
+    R = _project_to_so3(M3 / lam)
+    t = M[:, 3] / lam
+    return R, t
+
+
 def matrix_to_quat(R: np.ndarray) -> tuple[float, float, float, float]:
     """旋转矩阵 → 单位四元数 (w, x, y, z)（COLMAP images.txt 惯例，数值稳定分支法）。"""
     R = np.asarray(R, dtype=np.float64)

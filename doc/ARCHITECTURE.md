@@ -144,7 +144,8 @@ Butian3D 前端资产：ReconScene 资产加载位、SSE token 方案）。
   首件 `features`：Harris 角点（结构张量 + 非极大值抑制 + 间距去重）、去均值 L2 归一化的 patch 描述子、
   带 Lowe 比值测试 + 双向一致校验的暴力匹配；均经合成图单测（整数平移双图上精确恢复位移）。
   `geometry`：归一化 8 点法基础矩阵 + rank-2 约束 + RANSAC 对称极线距离剔外点，逐点 DLT 三角化（两视图投影
-  矩阵→稀疏 3D 点），从 F 恢复相对位姿（E=KᵀFK 的 SVD 四候选 × 两相机正深度手性选择），以及 `matrix_to_quat`
+  矩阵→稀疏 3D 点），从 F 恢复相对位姿（E=KᵀFK 的 SVD 四候选 × 两相机正深度手性选择），绝对位姿 `solve_pnp_dlt`
+  （已知 3D↔2D + K 的线性 DLT，由 det 定尺度、投影回 SO(3)，为多视图增量注册所需），以及 `matrix_to_quat`
   （分支法、约定 w≥0，对齐 COLMAP images.txt 惯例）；均由合成已知位姿双视图验证（极线残差、内点回收、三角化
   与位姿复原精度、四元数往返）。
 - **两视图编排 + 管线接线**：`sfm/pipeline.py` 的 `two_view_reconstruction` 串起检测→匹配→F→位姿→三角化（含
