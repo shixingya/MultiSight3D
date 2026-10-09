@@ -140,12 +140,15 @@ Butian3D 前端资产：ReconScene 资产加载位、SSE token 方案）。
   （并监听 `hashchange`），因此可分享带筛选的固定链接；全程零依赖零网络，保持目录站自包含。
 - **批量导入逐型号容错**：整库无人值守导入时，单个型号包出错（磁盘/解码等意外）被就地隔离——该型号
   记为带“导入失败”警告的占位条目（不落 `asset.json`，故画廊会自动忽略），其余型号照常导入，整批不中断。
+- **自研 SfM 内核（`multisight/sfm/`）**：遵循 PRD §11-1「完全自研」，仅依赖 numpy+Pillow（不引 OpenCV/scipy）。
+  首件 `features`：Harris 角点（结构张量 + 非极大值抑制 + 间距去重）、去均值 L2 归一化的 patch 描述子、
+  带 Lowe 比值测试 + 双向一致校验的暴力匹配；均经合成图单测（整数平移双图上精确恢复位移）。
 
 ## 8. 与 PRD 里程碑映射
 
 | 里程碑 | 交付 | 代码钩子（现已就位） |
 | --- | --- | --- |
-| v0.1 | 骨架 + 自研 SfM | `stages/sfm.Real` 替换点；`_synth` 的 COLMAP 目录即目标落盘格式 |
+| v0.1 | 骨架 + 自研 SfM | `sfm/`（纯 numpy 特征提取+匹配已落地）；`stages/sfm.Real` 替换点；`_synth` 的 COLMAP 目录即目标落盘格式 |
 | v0.2 | 学习型 MVS + PatchMatch 兜底 | `stages/mvs.Real`；设备探测（CUDA/MPS/CPU）选档在 pipeline.params 扩展 |
 | v0.3 | 网格 + 纹理烘焙 | `mesh.Real` / `texture.Real`；`_synth.write_glb_*` 替换为真实烘焙产物 |
 | v0.4 | 报告/归因/补拍建议/账号隔离 | `report` 已聚合指标与警告；FR-16 加 `server/routes` 鉴权层 |
