@@ -194,6 +194,7 @@ _TEMPLATE = r"""<!DOCTYPE html>
  #stage.grab{cursor:grabbing}
  #tt{max-width:92%;max-height:92%;image-rendering:auto;transition:transform .05s;pointer-events:none}
  .hint{color:var(--dim);font-size:12px;margin-top:10px;text-align:center}
+ #scrub{width:100%;margin-top:12px;accent-color:var(--acc)}
  img.full{max-width:100%;max-height:520px;display:block;margin:auto;background:#fff;border-radius:8px}
  .checker{background:repeating-conic-gradient(#20283c 0% 25%,#161c2b 0% 50%) 50%/24px 24px}
  #glbbox{height:440px;border-radius:10px;background:#08090d;position:relative;overflow:hidden}
@@ -207,7 +208,8 @@ _TEMPLATE = r"""<!DOCTYPE html>
 <div class="tabs">__TABS__</div>
 <main>
  <div class="pane" id="p-turntable"><div id="stage"><img id="tt" alt=""/></div>
-   <div class="hint">按住左右拖拽旋转 · 滚轮缩放 · 双击切换自动旋转（36 帧真实渲染）</div></div>
+   <input type="range" id="scrub" min="0" max="0" value="0" step="1" aria-label="帧滑杆"/>
+   <div class="hint">按住拖拽旋转 · 滚轮缩放 · 双击自动旋转 · ←/→ 逐帧 · Home/End 首尾（36 帧真实渲染）</div></div>
  <div class="pane" id="p-glb"><div id="glbbox"><div id="glbhint">加载 three.js 与内嵌 GLB…（首次需联网）</div></div></div>
  <div class="pane" id="p-texture"><img class="full checker" id="teximg" alt="texture"/></div>
  <div class="pane" id="p-preview"><img class="full" id="pvimg" alt="preview"/></div>
@@ -231,10 +233,19 @@ const pv=document.getElementById('pvimg'); pv.src=PREVIEW||STRUCTURE||TEXTURE;
 (function(){
   if(!FRAMES.length){document.getElementById('stage').innerHTML='<div style="color:#8b95ad">无转盘帧</div>';return;}
   const imgs=FRAMES.map(u=>{const i=new Image();i.src=u;return i;});
-  const tt=document.getElementById('tt'), stage=document.getElementById('stage');
+  const tt=document.getElementById('tt'), stage=document.getElementById('stage'), scrub=document.getElementById('scrub');
   let f=0, scale=1, auto=true, dragging=false, lastX=0, acc=0;
-  function show(){ tt.src=FRAMES[((f%FRAMES.length)+FRAMES.length)%FRAMES.length]; }
+  if(scrub) scrub.max=FRAMES.length-1;
+  function show(){ const idx=((f%FRAMES.length)+FRAMES.length)%FRAMES.length; tt.src=FRAMES[idx]; if(scrub) scrub.value=idx; }
   show();
+  if(scrub) scrub.oninput=()=>{ auto=false; f=+scrub.value; acc=f*10; show(); };
+  addEventListener('keydown',e=>{
+    const pane=document.getElementById('p-turntable'); if(!pane||!pane.classList.contains('active')) return;
+    const step=(d)=>{ auto=false; f=(f+d+FRAMES.length)%FRAMES.length; acc=f*10; show(); };
+    if(e.key==='ArrowRight'){ step(1); } else if(e.key==='ArrowLeft'){ step(-1); }
+    else if(e.key==='Home'){ auto=false; f=0; acc=0; show(); }
+    else if(e.key==='End'){ auto=false; f=FRAMES.length-1; acc=f*10; show(); }
+  });
   stage.onpointerdown=e=>{dragging=true;auto=false;lastX=e.clientX;stage.classList.add('grab');stage.setPointerCapture(e.pointerId);};
   stage.onpointermove=e=>{ if(!dragging)return; const dx=e.clientX-lastX; lastX=e.clientX; acc+=dx;
     f=Math.round(acc/10); show(); };

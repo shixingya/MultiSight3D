@@ -132,6 +132,14 @@ def test_single_file_demo_self_contained(asset_dir, tmp_path):
     assert 'src="http' not in html and "url(http" not in html
 
 
+def test_demo_turntable_scrubber_keyboard(asset_dir, tmp_path):
+    out = tmp_path / "lib" / "agm-x"
+    import_asset_dir(asset_dir, out)
+    html = render_single_file_html(load_asset_bundle(out))
+    assert 'id="scrub"' in html                    # 帧滑杆
+    assert "ArrowRight" in html and "Home" in html and "End" in html   # 键盘逐帧
+
+
 # ---------------------------------------------------------------- 底层单元
 
 def test_describe_bad_magic():
