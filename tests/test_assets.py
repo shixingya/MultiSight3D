@@ -21,7 +21,7 @@ from PIL import Image
 from multisight.assets import (
     scan_asset_dir, import_asset_dir, import_assets_root, load_asset_bundle,
     render_single_file_html, render_library_index, write_library_index,
-    describe_openflight, extract_mesh,
+    describe_openflight, extract_mesh, find_model_roots,
 )
 from multisight.assets.glb import write_glb
 
@@ -389,3 +389,49 @@ def test_batch_reimport_on_source_change(tmp_path):
     assert not is_up_to_date(out / "m1", d)
     r = import_assets_root(parent, out)
     assert r[0][3] is False                             # 变化→ 重导（未跳过）
+
+
+# ---------------------------------------------------------------- 分类发现 / 整库导入
+
+def test_find_model_roots_whole_library(tmp_path):
+    lib = tmp_path / "三维模型"
+    _build_asset(lib / "战斗机" / "F16战隼", "F16")
+    _build_asset(lib / "战斗机" / "F22猛禽", "F22")
+    _build_asset(lib / "潜艇" / "元27", "元27")
+    (lib / "战斗机" / ".svn").mkdir(parents=True)      # 隐藏目录应被跳过
+    roots = find_model_roots(lib)
+    got = {(leaf.name, cat, prefix) for leaf, cat, prefix in roots}
+    assert got == {("F16战隼", "战斗机", True), ("F22猛禽", "战斗机", True),
+                   ("元27", "潜艇", True)}
+
+
+def test_find_model_roots_per_category(tmp_path):
+    cat_dir = tmp_path / "反舰导弹"
+    d = _build_asset(cat_dir / "鱼叉AGM84", "鱼叉")
+    roots = find_model_roots(cat_dir)
+    assert roots == [(d, "反舰导弹", False)]             # 直接子型号：大类=父名、不前缀
+
+
+def test_whole_library_import_category(tmp_path):
+    lib = tmp_path / "三维模型"
+    _build_asset(lib / "战斗机" / "F16", "F16")
+    _build_asset(lib / "潜艇" / "元27", "元27")
+    out = tmp_path / "assets_out"
+    import_assets_root(lib, out)
+    # 目录名带大类前缀，防重名；asset.json 记录 category
+    assert (out / "战斗机-F16" / "asset.json").is_file()
+    assert (out / "潜艇-元27" / "asset.json").is_file()
+    assert load_asset_bundle(out / "战斗机-F16").category == "战斗机"
+    html = render_library_index(out, api=False)
+    assert 'id="catf"' in html                         # 多分类→分类下拉
+    assert 'data-cat="战斗机"' in html
+    assert "http" not in html                          # 仍零网络
+
+
+def test_single_category_no_filter(tmp_path):
+    cat_dir = tmp_path / "反舰导弹"
+    _build_asset(cat_dir / "鱼叉", "鱼叉")
+    out = tmp_path / "assets_out"
+    import_assets_root(cat_dir, out)
+    html = render_library_index(out, api=False)
+    assert 'id="catf"' not in html                     # 单一分类不给下拉

@@ -64,6 +64,7 @@ def render_library_index(root: Path | str, *, api: bool = False) -> str:
     root = Path(root)
     cards = []
     counts: dict[str, int] = {}
+    cats: dict[str, int] = {}
     for folder in list_library_asset_dirs(root):
         try:
             b = load_asset_bundle(folder)
@@ -71,6 +72,9 @@ def render_library_index(root: Path | str, *, api: bool = False) -> str:
             continue
         disp = {"glb": "真三维", "turntable": "转盘", "texture": "贴图"}.get(b.display, b.display)
         counts[b.display] = counts.get(b.display, 0) + 1
+        cat = (getattr(b, "category", "") or "").strip()
+        if cat:
+            cats[cat] = cats.get(cat, 0) + 1
         pills = [disp, f"{len(b.sprites)} 帧"]
         if b.triangles:
             pills.append(f"{b.triangles} 面")
@@ -87,14 +91,16 @@ def render_library_index(root: Path | str, *, api: bool = False) -> str:
                else '<div class="noimg">无预览图</div>')
         raw_title = b.name or folder.name
         title = raw_title.replace("&", "&amp;").replace("<", "&lt;")
-        searchable = raw_title.lower().replace('"', "&quot;")
+        cat_a = cat.replace("&", "&amp;").replace("<", "&lt;").replace('"', "&quot;")
+        searchable = (raw_title + ((" " + cat) if cat else "")).lower().replace('"', "&quot;")
         nframes = len(b.sprites)
         ntris = int(b.triangles or 0)
+        catbadge = f'<span class="cat">{cat_a}</span>' if cat else ""
         cards.append(
-            f'<a class="card" href="{link}" data-t="{b.display}" data-name="{searchable}" '
-            f'data-frames="{nframes}" data-tris="{ntris}">'
+            f'<a class="card" href="{link}" data-t="{b.display}" data-cat="{cat_a}" '
+            f'data-name="{searchable}" data-frames="{nframes}" data-tris="{ntris}">'
             f'{pic}<div class="meta">'
-            f"<h3>{title}</h3><div class=\"pills\">"
+            f"<h3>{catbadge}{title}</h3><div class=\"pills\">"
             + "".join(f"<span>{p}</span>" for p in pills) + "</div></div></a>")
     grid = "\n".join(cards) or '<p class="empty">暂无资源模型，先用 import-asset 导入。</p>'
     total = sum(counts.values())
@@ -102,8 +108,17 @@ def render_library_index(root: Path | str, *, api: bool = False) -> str:
     for key, label in (("glb", "真三维"), ("turntable", "转盘"), ("texture", "贴图")):
         if counts.get(key):
             chips.append(f'<button class="chip" data-f="{key}">{label} <b>{counts[key]}</b></button>')
+    if len(cats) >= 2:   # 多分类才给下拉（单分类无意义）
+        opts = ['<option value="">全部分类</option>']
+        for cname in sorted(cats):
+            ca = cname.replace("&", "&amp;").replace("<", "&lt;").replace('"', "&quot;")
+            opts.append(f'<option value="{ca}">{ca} ({cats[cname]})</option>')
+        catarea = '<select id="catf" class="sort" aria-label="分类">' + "".join(opts) + "</select>"
+    else:
+        catarea = ""
     html = _INDEX_TEMPLATE.replace("__GRID__", grid)
     html = html.replace("__CHIPS__", "".join(chips))
+    html = html.replace("__CATAREA__", catarea)
     return html
 
 
@@ -321,6 +336,8 @@ _INDEX_TEMPLATE = r"""<!DOCTYPE html>
  .chip b{color:var(--acc);margin-left:2px}
  select.sort{background:#0f131d;color:var(--text);border:1px solid var(--line);
    border-radius:9px;padding:7px 10px;font:inherit;cursor:pointer}
+ .meta h3 .cat{display:inline-block;background:#243056;color:#a9c0ff;border-radius:5px;
+   padding:1px 6px;margin-right:6px;font-size:11px;vertical-align:middle}
  #cnt{color:var(--dim);font-size:12px;margin-left:auto}
 </style></head>
 <body>
@@ -329,6 +346,7 @@ _INDEX_TEMPLATE = r"""<!DOCTYPE html>
 <div class="bar">
  <input id="q" type="search" placeholder="🔍 搜索模型名称…" autocomplete="off"/>
  <div class="chips">__CHIPS__</div>
+ __CATAREA__
  <select id="sort" class="sort" aria-label="排序">
    <option value="name">名称 A→Z</option>
    <option value="frames">按帧数 ↓</option>
@@ -345,6 +363,7 @@ _INDEX_TEMPLATE = r"""<!DOCTYPE html>
   const q=document.getElementById('q'), cnt=document.getElementById('cnt');
   const nores=document.getElementById('nores');
   const sel=document.getElementById('sort');
+  const catf=document.getElementById('catf');
   const chips=[...document.querySelectorAll('.chip')];
   let filter='';
   function apply(){
@@ -352,7 +371,8 @@ _INDEX_TEMPLATE = r"""<!DOCTYPE html>
     cards.forEach(c=>{
       const okT=!filter||c.dataset.t===filter;
       const okQ=!kw||(c.dataset.name||'').includes(kw)||(c.textContent||'').toLowerCase().includes(kw);
-      const vis=okT&&okQ; c.style.display=vis?'':'none'; if(vis)shown++;
+      const okC=!catf||!catf.value||c.dataset.cat===catf.value;
+      const vis=okT&&okQ&&okC; c.style.display=vis?'':'none'; if(vis)shown++;
     });
     cnt.textContent='显示 '+shown+' / '+cards.length+' 个';
     nores.hidden = shown>0 || cards.length===0;
@@ -370,6 +390,7 @@ _INDEX_TEMPLATE = r"""<!DOCTYPE html>
     if(q.value) p.set('q',q.value);
     if(filter) p.set('t',filter);
     if(sel.value&&sel.value!=='name') p.set('sort',sel.value);
+    if(catf&&catf.value) p.set('c',catf.value);
     const h=p.toString();
     try{
       history.replaceState(null,'',h?('#'+h):location.pathname+location.search);
@@ -381,6 +402,7 @@ _INDEX_TEMPLATE = r"""<!DOCTYPE html>
   });
   q.addEventListener('input',()=>{apply(); syncHash();});
   sel.onchange=e=>{doSort(e.target.value); apply(); syncHash();};
+  if(catf) catf.onchange=()=>{apply(); syncHash();};
   // 从 URL hash 恢复搜索/筛选/排序，便于分享带状态的固定链接
   function restore(){
     const p=new URLSearchParams(location.hash.slice(1));
@@ -394,6 +416,7 @@ _INDEX_TEMPLATE = r"""<!DOCTYPE html>
       filter='';
       chips.forEach(x=>x.classList.toggle('active', x.dataset.f===''));
     }
+    if(catf){ catf.value = p.get('c')||''; }   // 恢复分类筛选
   }
   restore();
   addEventListener('hashchange',()=>{restore(); apply();});  // 站内前进/后退、手改 hash 也能恢复

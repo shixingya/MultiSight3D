@@ -72,6 +72,7 @@ class AssetBundle:
     display: str = "turntable"   # 'turntable' | 'glb' | 'texture'
     warnings: list[str] = field(default_factory=list)
     signature: dict[str, Any] = field(default_factory=dict)
+    category: str = ""            # 所属大类（整库导入时由上层目录名推导，供画廊分组）
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -162,11 +163,14 @@ def scan_asset_dir(folder: Path | str) -> AssetBundle:
     return bundle
 
 
-def import_asset_dir(folder: Path | str, out_dir: Path | str) -> AssetBundle:
+def import_asset_dir(folder: Path | str, out_dir: Path | str, *,
+                     category: str = "") -> AssetBundle:
     """扫描 + 落盘归一化产物（贴图 PNG / 可选 GLB / asset.json）。返回带产物路径的 bundle。"""
     folder, out_dir = Path(folder), Path(out_dir)
     bundle = scan_asset_dir(folder)
     bundle.signature = _dir_signature(folder)
+    if category:
+        bundle.category = category
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # 贴图归一化为 PNG
@@ -281,27 +285,91 @@ def _looks_like_asset_dir(folder: Path) -> bool:
     return False
 
 
+# 型号包内部的“组件子目录”（不是独立型号，不应被当作叶子导入）
+_COMPONENT_DIRS = {"三维模型文件", "模型文件", "sprites", "sprite", "texture",
+                   "textures", "贴图", "thumbnails", "images", "doc", "文档"}
+
+
+def _is_component(dir_name: str) -> bool:
+    n = dir_name.lower().strip()
+    return n in _COMPONENT_DIRS or n.startswith("sprite")
+
+
+def _has_package_marker(d: Path) -> bool:
+    """顶层有 docx / preview.png / structure.png —— 型号包的强特征（类别目录没有）。"""
+    for p in d.iterdir():
+        if p.is_file():
+            n = p.name.lower()
+            if n.endswith(".docx") or n in ("preview.png", "structure.png"):
+                return True
+    return False
+
+
+def _has_direct_model_or_tex(d: Path) -> bool:
+    return any(p.is_file() and p.suffix.lower() in (_MODEL_EXT | _TEX_EXT) for p in d.iterdir())
+
+
+def _is_model_root(d: Path) -> bool:
+    """是否是一个具体型号包根（含技术说明/渲染图，或直接摆模型/贴图文件且非组件目录）。"""
+    if not _looks_like_asset_dir(d):
+        return False
+    if _has_package_marker(d):
+        return True
+    return _has_direct_model_or_tex(d) and not _is_component(d.name)
+
+
+def _subdirs(folder: Path) -> list[Path]:
+    return sorted(p for p in folder.iterdir() if p.is_dir() and not p.name.startswith("."))
+
+
+def _descend_leaves(folder: Path) -> list[Path]:
+    """向下探索到型号叶子（跳过组件子目录与隐藏目录）。"""
+    if _is_model_root(folder):
+        return [folder]
+    leaves: list[Path] = []
+    for c in _subdirs(folder):
+        if _is_component(c.name):
+            continue
+        leaves.extend(_descend_leaves(c))
+    return leaves
+
+
+def find_model_roots(parent: Path | str) -> list[tuple[Path, str, bool]]:
+    """发现待导入的型号包，返回 [(型号目录, 大类, 是否用大类做目录前缀)]。
+
+    - 若 parent 的直接子目录就是型号（按类别批量）→ 大类=parent 名，不额外前缀；
+    - 若 parent 是“库根”（其子目录是大类容器）→ 向下收集型号叶子，大类=容器名，前缀以防重名。
+    """
+    parent = Path(parent)
+    out: list[tuple[Path, str, bool]] = []
+    for c in _subdirs(parent):
+        if _is_model_root(c):
+            out.append((c, parent.name, False))
+        else:
+            for leaf in _descend_leaves(c):
+                out.append((leaf, c.name, True))
+    return out
+
+
 def import_assets_root(parent: Path | str, out_root: Path | str,
                        *, force: bool = False) -> list[tuple[str, Path, AssetBundle, bool]]:
-    """批量导入：把「模型库根目录」下每个子目录当作一个资源模型导入。
+    """批量导入：发现 parent 下的型号包（支持按类别或直接挂型号两种层级），逐个导入。
 
-    逐个产到 <out_root>/<slug>/（asset.json + 贴图 + sprites [+ demo]），
-    跳过 .svn 等非资源目录。默认增量：签名未变化的子目录不重导（--force 强制）。
-    返回 [(源目录名, 产物目录, bundle, 是否跳过)]。
+    产物落 <out_root>/<slug>/（asset.json + 贴图 + sprites [+ demo]），跳过 .svn / 组件目录。
+    默认增量：签名未变化的型号不重导（--force 强制）。返回 [(型号名, 产物目录, bundle, 是否跳过)]。
     """
     parent, out_root = Path(parent), Path(out_root)
     results: list[tuple[str, Path, AssetBundle, bool]] = []
-    for child in sorted(p for p in parent.iterdir() if p.is_dir()):
-        if not _looks_like_asset_dir(child):
-            continue
-        out = out_root / slugify(child.name)
-        if not force and is_up_to_date(out, child):
+    for leaf, category, prefix in find_model_roots(parent):
+        slug = slugify(f"{category}-{leaf.name}") if prefix else slugify(leaf.name)
+        out = out_root / slug
+        if not force and is_up_to_date(out, leaf):
             try:
-                results.append((child.name, out, load_asset_bundle(out), True))
+                results.append((leaf.name, out, load_asset_bundle(out), True))
                 continue
             except (json.JSONDecodeError, OSError, KeyError):
                 pass   # 产物不可读 → 当未导入，重新导
-        results.append((child.name, out, import_asset_dir(child, out), False))
+        results.append((leaf.name, out, import_asset_dir(leaf, out, category=category), False))
     return results
 
 

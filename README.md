@@ -41,6 +41,7 @@ multisight serve --port 8050
 #   归一化落盘并生成「无需部署、双击即开」的单文件自包含 demo.html
 multisight import-asset -i "D:/path/to/模型目录" -o assets_out --demo
 #   批量：把一个「模型库父目录」下每个子目录都导入，并附赠可托管的画廊 index.html
+#   两种层级都支持：直接指「单个大类」（其子目录即型号），或指「库根」（自动按大类分组）
 #   默认增量：签名未变化的模型自动跳过重导（加 --force 可强制全量重建）
 multisight import-asset -i "D:/path/to/模型库父目录" -o assets_out --batch --demo
 #   把整个 assets_out/ 丢到任意静态托管（如 GitHub Pages）或双击 index.html 即可上线
@@ -54,7 +55,7 @@ multisight import-asset -i "D:/path/to/模型库父目录" -o assets_out --batch
 > 💡 `import-asset` 产出的 `demo.html` 把转盘帧 / 贴图 / 元数据全部以 base64 内联，零依赖零网络，
 > 直接双击即可在浏览器打开——正合「无需部署、线上直接运行」。若 `.flt` 几何通过严格校验，
 > 还会多出「真三维」标签（three.js 走 CDN，离线自动降级为转盘）。`--batch` 还会生成画廊
-> `index.html`，汇总整个 `assets_out/` 为可一键托管的静态模型站（内置搜索、按展示类型筛选与按名称/帧数/面数排序；当前视图状态写入 URL hash，可直接分享带筛选的固定链接）。
+> `index.html`，汇总整个 `assets_out/` 为可一键托管的静态模型站（内置搜索、按展示类型/大类筛选、按名称/帧数/面数排序；当前视图状态写入 URL hash，可直接分享带筛选的固定链接）。
 
 ## 🧱 技术栈
 

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from .library import (
     AssetBundle, scan_asset_dir, import_asset_dir, import_assets_root,
-    load_asset_bundle, list_library_asset_dirs, slugify, is_up_to_date,
+    load_asset_bundle, list_library_asset_dirs, slugify, is_up_to_date, find_model_roots,
 )
 from .openflight import OpenFlightInfo, describe_openflight, describe_ive, extract_mesh
 from .spec import parse_model_spec
@@ -25,7 +25,7 @@ from .demo import (
 
 __all__ = [
     "AssetBundle", "scan_asset_dir", "import_asset_dir", "import_assets_root",
-    "load_asset_bundle", "list_library_asset_dirs", "slugify", "is_up_to_date",
+    "load_asset_bundle", "list_library_asset_dirs", "slugify", "is_up_to_date", "find_model_roots",
     "OpenFlightInfo", "describe_openflight", "describe_ive", "extract_mesh",
     "parse_model_spec", "load_image", "normalize_texture",
     "build_single_file_html", "render_single_file_html",
