@@ -180,6 +180,90 @@ def _pnp_reproj_errors(K, R, t, X, x) -> np.ndarray:
     return np.linalg.norm(project(K, R, t, X) - np.asarray(x, dtype=np.float64), axis=1)
 
 
+def refine_pnp_gauss_newton(K: np.ndarray, R: np.ndarray, t: np.ndarray,
+                            X: np.ndarray, x: np.ndarray, *, iters: int = 25,
+                            tol: float = 1e-9) -> tuple[np.ndarray, np.ndarray]:
+    """Levenberg-Marquardt 最小化重投影误差精化 PnP 位姿（左扰动 exp 坐标，6 自由度）。
+
+    带阻尼与单调保护：只接受使 SSE 下降的步，否则放大阻尼重试（避免无保护 GN 跑飞）。
+    DLT 有偏初值靠此局部精化拉回正确位姿。
+    """
+    K = np.asarray(K, dtype=np.float64)
+    R = np.asarray(R, dtype=np.float64).copy()
+    t = np.asarray(t, dtype=np.float64).reshape(3).copy()
+    X = np.asarray(X, dtype=np.float64)
+    x = np.asarray(x, dtype=np.float64)
+    fx, fy = K[0, 0], K[1, 1]
+    cx, cy = K[0, 2], K[1, 2]
+    lam = 1e-3
+
+    def _resid_and_jac(Rc, tc):
+        Xc = X @ Rc.T + tc
+        z = Xc[:, 2]
+        if np.any(np.abs(z) < 1e-9):
+            return None, None, np.inf
+        pred = np.column_stack([fx * Xc[:, 0] / z + cx, fy * Xc[:, 1] / z + cy])
+        r = (x - pred).reshape(-1)
+        dpx = np.zeros((len(X), 2, 3))
+        dpx[:, 0, 0] = fx / z
+        dpx[:, 0, 2] = -fx * Xc[:, 0] / z ** 2
+        dpx[:, 1, 1] = fy / z
+        dpx[:, 1, 2] = -fy * Xc[:, 1] / z ** 2
+        rx = Xc - tc                                # = R X（左扰动仅作于 R X，不含平移）
+        skew = np.zeros((len(X), 3, 3))
+        skew[:, 0, 1] = -rx[:, 2]
+        skew[:, 0, 2] = rx[:, 1]
+        skew[:, 1, 0] = rx[:, 2]
+        skew[:, 1, 2] = -rx[:, 0]
+        skew[:, 2, 0] = -rx[:, 1]
+        skew[:, 2, 1] = rx[:, 0]
+        J = np.zeros((len(X), 2, 6))
+        J[:, :, :3] = dpx @ (-skew)
+        J[:, :, 3:] = dpx
+        return r, J.reshape(-1, 6), float(r @ r)
+
+    r, J, cost = _resid_and_jac(R, t)
+    if r is None:
+        return R, t
+    for _ in range(iters):
+        H = J.T @ J
+        g = J.T @ r                                   # δ = (JᵀJ+λdiag)⁻¹ Jᵀ r（r=观测-预测）
+        diag = np.diag(np.diag(H)).copy()
+        stepped = False
+        for _trial in range(8):
+            try:
+                delta = np.linalg.solve(H + lam * diag, g)
+            except np.linalg.LinAlgError:
+                lam *= 4.0
+                continue
+            Rn = _project_to_so3(_exp_so3(delta[:3]) @ R)
+            tn = t + delta[3:]
+            rn, Jn, costn = _resid_and_jac(Rn, tn)
+            if rn is not None and costn < cost:
+                R, t, r, J, cost = Rn, tn, rn, Jn, costn
+                lam = max(lam * 0.5, 1e-9)
+                stepped = True
+                break
+            lam *= 4.0
+        if not stepped or abs(cost) < tol:
+            break
+    return R, t
+
+
+def _exp_so3(rho: np.ndarray) -> np.ndarray:
+    """Rodrigues 指数映射：so(3) 向量 → 旋转矩阵。"""
+    theta = np.linalg.norm(rho)
+    if theta < 1e-9:
+        return np.eye(3) + _skew(rho)
+    a = rho / theta
+    Kx = _skew(a)
+    return np.eye(3) + np.sin(theta) * Kx + (1 - np.cos(theta)) * (Kx @ Kx)
+
+
+def _skew(v: np.ndarray) -> np.ndarray:
+    return np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]], dtype=np.float64)
+
+
 def ransac_pnp(K: np.ndarray, points3d: np.ndarray, points2d: np.ndarray, *,
               iters: int = 200, threshold: float = 4.0, seed: int = 0
               ) -> tuple[np.ndarray | None, np.ndarray | None, np.ndarray]:
@@ -193,6 +277,27 @@ def ransac_pnp(K: np.ndarray, points3d: np.ndarray, points2d: np.ndarray, *,
     if n < 6 or len(x) != n:
         return None, None, np.zeros(n, dtype=bool)
     rng = np.random.default_rng(seed)
+    models: list[tuple[np.ndarray, np.ndarray, np.ndarray]] = []
+
+    def _add_model(R, t, use=None):
+        """在（可选）内点子集上精化后回代全点计内点，收入候选模型集。"""
+        try:
+            if use is None:
+                use = np.ones(n, dtype=bool)
+            Rf, tf = refine_pnp_gauss_newton(K, R, t, X[use], x[use])
+            mask = _pnp_reproj_errors(K, Rf, tf, X, x) < threshold
+            if np.isfinite(mask.sum()):
+                models.append((Rf, tf, mask))
+        except (ValueError, np.linalg.LinAlgError):
+            pass
+
+    # 种子：全点 DLT + LM 精化（低外点时已足以拉回正确 basin）
+    try:
+        Rs, ts = solve_pnp_dlt(K, X, x)
+        _add_model(Rs, ts)
+    except (ValueError, np.linalg.LinAlgError):
+        pass
+
     best_mask = np.zeros(n, dtype=bool)
     best_R: np.ndarray | None = None
     best_t: np.ndarray | None = None
@@ -210,13 +315,16 @@ def ransac_pnp(K: np.ndarray, points3d: np.ndarray, points2d: np.ndarray, *,
         c = int(mask.sum())
         if c > best_count:
             best_count, best_mask, best_R, best_t = c, mask, R, t
-    if best_R is not None and best_count >= 6:          # 用全部内点重估
+    if best_R is not None and best_count >= 6:          # 用采样最优的内点 DLT 重估 + 精化
         try:
-            best_R, best_t = solve_pnp_dlt(K, X[best_mask], x[best_mask])
-            best_mask = _pnp_reproj_errors(K, best_R, best_t, X, x) < threshold
+            Rs, ts = solve_pnp_dlt(K, X[best_mask], x[best_mask])
+            _add_model(Rs, ts, best_mask)
         except (ValueError, np.linalg.LinAlgError):
             pass
-    return best_R, best_t, best_mask
+    if not models:
+        return None, None, np.zeros(n, dtype=bool)
+    R, t, mask = max(models, key=lambda m: int(m[2].sum()))
+    return R, t, mask
 
 
 def _project_to_so3(R: np.ndarray) -> np.ndarray:

@@ -14,7 +14,8 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from .features import detect_and_describe, match_descriptors, to_gray
-from .geometry import estimate_fundamental, ransac_fundamental, recover_pose
+from .geometry import (estimate_fundamental, ransac_fundamental, recover_pose,
+                       ransac_pnp)
 
 
 @dataclass
@@ -129,17 +130,145 @@ def select_best_pair(images, *, focal: float | None = None, max_corners: int = 6
     返回 (最优结果, (i, j))。各帧特征只提取一次；若全部候选都点不足，返回内点最多的
     那一对（其 ok/registered 仍为假，由调用方据实判断），而非硬造。
     """
-    grays = [to_gray(im) for im in images]
-    feats = [detect_and_describe(g, max_corners=max_corners, patch=patch) for g in grays]
+    grays, feats = _extract_features(images, max_corners, patch)
     best: tuple[TwoViewResult, tuple[int, int]] | None = None
     for (i, j) in candidate_pairs(len(grays)):
-        ca, da = feats[i]
-        cb, db = feats[j]
-        r = two_view_from_features(grays[i], ca, da, grays[j], cb, db, focal=focal,
-                                   ratio=ratio, ransac_iters=ransac_iters,
-                                   ransac_threshold=ransac_threshold, seed=seed)
+        r = _score_pair(grays, feats, i, j, focal=focal, ratio=ratio,
+                        ransac_iters=ransac_iters, ransac_threshold=ransac_threshold, seed=seed)
         if best is None or r.num_inliers > best[0].num_inliers:
             best = (r, (i, j))
     if best is None:                                     # <2 帧：无候选对
         raise ValueError("select_best_pair 需要至少 2 张图像")
     return best
+
+
+def _extract_features(images, max_corners: int, patch: int):
+    """逐帧灰度化 + 角点/描述子（只算一次，供选对/增量注册复用）。"""
+    grays = [to_gray(im) for im in images]
+    feats = [detect_and_describe(g, max_corners=max_corners, patch=patch) for g in grays]
+    return grays, feats
+
+
+def _score_pair(grays, feats, i, j, *, focal, ratio, ransac_iters, ransac_threshold, seed):
+    ca, da = feats[i]
+    cb, db = feats[j]
+    return two_view_from_features(grays[i], ca, da, grays[j], cb, db, focal=focal,
+                                  ratio=ratio, ransac_iters=ransac_iters,
+                                  ransac_threshold=ransac_threshold, seed=seed)
+
+
+@dataclass
+class RegisteredCamera:
+    index: int
+    R: np.ndarray
+    t: np.ndarray
+    num_inliers: int = 0
+
+
+@dataclass
+class ReconstructionResult:
+    """多视图增量注册结果（世界系 = 初始帧 a 的相机系，尺度由首对单位基线定）。"""
+    cameras: list[RegisteredCamera] = field(default_factory=list)
+    points3d: np.ndarray = field(default_factory=lambda: np.zeros((0, 3)))
+    tracks: list[dict] = field(default_factory=list)          # tid -> {frame_idx: corner_idx}
+    num_frames: int = 0
+    num_registered: int = 0
+    initial_pair: tuple[int, int] = (-1, -1)
+    pnp_inliers: dict[int, int] = field(default_factory=dict)  # frame_idx -> pnp 内点数
+
+    @property
+    def ok(self) -> bool:
+        return self.num_registered >= 2 and len(self.points3d) > 0
+
+
+def incremental_reconstruction(images, *, focal: float | None = None, max_corners: int = 600,
+                               patch: int = 8, ratio: float = 0.8, ransac_iters: int = 300,
+                               ransac_threshold: float = 1.0, pnp_reproj_px: float = 4.0,
+                               min_pnp_inliers: int = 10,
+                               seed: int = 0) -> ReconstructionResult:
+    """增量注册：选最优初始对做两视图→建 3D 轨→逐帧 PnP（2D-3D 迁移 + RANSAC）注册。
+
+    v0.1 范围：以初始对三角化的 3D 点为地图，向后续帧做特征迁移并用 RANSAC-PnP 求位姿；
+    新点三角化增长 + 全局 BA 为下一里程碑。重叠不足/内点不够的帧会诚实地不被注册。
+    """
+    grays, feats = _extract_features(images, max_corners, patch)
+    n = len(grays)
+    if n < 2:
+        raise ValueError("incremental_reconstruction 需要至少 2 张图像")
+    res = ReconstructionResult(num_frames=n)
+
+    init = None
+    for (i, j) in candidate_pairs(n):
+        r = _score_pair(grays, feats, i, j, focal=focal, ratio=ratio,
+                        ransac_iters=ransac_iters, ransac_threshold=ransac_threshold, seed=seed)
+        if init is None or r.num_inliers > init[0].num_inliers:
+            init = (r, (i, j))
+    two, (a, b) = init
+    res.initial_pair = (a, b)
+    K = default_K(grays[a].shape, focal)
+    if not two.registered or two.F is None or two.num_inliers < 8:
+        return res                                       # 初始对不可靠→诚实降级
+
+    ca, da = feats[a]
+    cb, db = feats[b]
+    matches = match_descriptors(da, db, ratio=ratio, mutual=True)
+    ia = np.array([x for x, _ in matches])
+    ib = np.array([y for _, y in matches])
+    p1 = np.array([[ca[x].x, ca[x].y] for x in ia], dtype=np.float64)
+    p2 = np.array([[cb[y].x, cb[y].y] for y in ib], dtype=np.float64)
+    F, inl = ransac_fundamental(p1, p2, iters=ransac_iters, threshold=ransac_threshold, seed=seed)
+    R, t, X = recover_pose(F, K, p1[inl], p2[inl])
+    iinl = np.where(inl)[0]                              # 匹配集中的下标→内点
+    z1 = X[:, 2]
+    z2 = (R @ X.T)[2] + t[2]
+    front = (~np.isnan(X).any(axis=1)) & (z1 > 0) & (z2 > 0)
+    pts: list[np.ndarray] = []
+    tracks: list[dict] = []
+    for k in np.where(front)[0]:
+        m = iinl[k]
+        pts.append(X[k])
+        tracks.append({a: int(ia[m]), b: int(ib[m])})
+    res.points3d = np.array(pts) if pts else np.zeros((0, 3))
+    res.tracks = tracks
+    res.cameras = [RegisteredCamera(a, np.eye(3), np.zeros(3), two.num_inliers),
+                   RegisteredCamera(b, R, t, two.num_inliers)]
+    registered = {a, b}
+
+    for c in range(n):
+        if c in registered:
+            continue
+        cc, dc = feats[c]
+        Xobs, xobs, tid_of, ic_of = [], [], [], []
+        claimed: set[int] = set()
+        for r in list(registered):
+            dr = feats[r][1]
+            mcr = match_descriptors(dc, dr, ratio=ratio, mutual=True)  # (ic, ir)
+            ir2ic: dict[int, int] = {}
+            for ic, ir in mcr:
+                ir2ic.setdefault(ir, ic)
+            for tid, obs in enumerate(tracks):
+                if tid in claimed or r not in obs:
+                    continue
+                ic = ir2ic.get(obs[r])
+                if ic is not None:
+                    Xobs.append(res.points3d[tid])
+                    xobs.append([cc[ic].x, cc[ic].y])
+                    tid_of.append(tid)
+                    ic_of.append(ic)
+                    claimed.add(tid)
+        if len(Xobs) < 6:
+            continue
+        Rc, tc, mask = ransac_pnp(K, np.array(Xobs), np.array(xobs, dtype=np.float64),
+                                  threshold=pnp_reproj_px, seed=seed)
+        ninl = int(mask.sum())
+        if Rc is None or ninl < min_pnp_inliers:
+            continue
+        res.cameras.append(RegisteredCamera(c, Rc, tc, ninl))
+        res.pnp_inliers[c] = ninl
+        registered.add(c)
+        for i in np.where(mask)[0]:                     # 用内点扩展轨迹（供后续帧迁移）
+            tracks[tid_of[i]][c] = ic_of[i]
+
+    res.cameras.sort(key=lambda cm: cm.index)
+    res.num_registered = len(res.cameras)
+    return res

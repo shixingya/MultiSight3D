@@ -5,7 +5,8 @@ from __future__ import annotations
 import numpy as np
 
 from multisight.sfm import (estimate_fundamental, ransac_fundamental, triangulate,
-                            recover_pose, solve_pnp_dlt, ransac_pnp, project, matrix_to_quat)
+                            recover_pose, solve_pnp_dlt, ransac_pnp,
+                            refine_pnp_gauss_newton, project, matrix_to_quat)
 
 
 def _rot(axis: str, ang: float) -> np.ndarray:
@@ -182,6 +183,27 @@ def test_ransac_pnp_rejects_outliers():
     assert tp >= 0.8 * n            # 回收大部分真内点
     assert fp <= 0.2 * n_out        # 外点绝大多数被拒
     assert float(np.dot(tr, t) / (np.linalg.norm(tr) * np.linalg.norm(t))) > 0.98  # 平移方向正确
+
+
+def test_refine_pnp_gauss_newton_descends_from_perturbed_init():
+    """LM 精化：从扰动位姿初值出发应把重投影误差降到 ~0 并复原 R/t（锁定三处 bug 修复）。"""
+    rng = np.random.default_rng(41)
+    K = np.array([[600.0, 0, 320], [0, 600.0, 240], [0, 0, 1]])
+    n = 40
+    X = np.column_stack([rng.uniform(-1, 1, n), rng.uniform(-1, 1, n), rng.uniform(3, 6, n)])
+    R = _rot("y", np.radians(10)) @ _rot("x", np.radians(-6))
+    t = np.array([0.2, -0.1, 0.3])
+    x = project(K, R, t, X)
+    # 构造有偏初值：旋转偏 ~6°、平移偏 0.1（模拟 DLT 在噪声下的偏差）
+    R0 = _rot("y", np.radians(6)) @ R
+    t0 = t + np.array([0.06, -0.08, 0.05])
+    err_before = float(np.median(np.linalg.norm(project(K, R0, t0, X) - x, axis=1)))
+    Rf, tf = refine_pnp_gauss_newton(K, R0, t0, X, x)
+    err_after = float(np.median(np.linalg.norm(project(K, Rf, tf, X) - x, axis=1)))
+    assert err_before > 5.0                          # 初值确有偏（否则测不到下降）
+    assert err_after < 1e-6                          # LM 收敛到近乎零重投影
+    assert np.allclose(Rf, R, atol=1e-6)             # 复原真值旋转
+    assert np.allclose(tf, t, atol=1e-6)             # 复原真值平移（含模长）
 
 
 def _quat_to_matrix(q):

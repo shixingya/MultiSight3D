@@ -145,14 +145,19 @@ Butian3D 前端资产：ReconScene 资产加载位、SSE token 方案）。
   带 Lowe 比值测试 + 双向一致校验的暴力匹配；均经合成图单测（整数平移双图上精确恢复位移）。
   `geometry`：归一化 8 点法基础矩阵 + rank-2 约束 + RANSAC 对称极线距离剔外点，逐点 DLT 三角化（两视图投影
   矩阵→稀疏 3D 点），从 F 恢复相对位姿（E=KᵀFK 的 SVD 四候选 × 两相机正深度手性选择），绝对位姿 `solve_pnp_dlt`
-  （已知 3D↔2D + K 的线性 DLT，由 det 定尺度、投影回 SO(3)，为多视图增量注册所需），以及 `matrix_to_quat`
-  （分支法、约定 w≥0，对齐 COLMAP images.txt 惯例）；均由合成已知位姿双视图验证（极线残差、内点回收、三角化
-  与位姿复原精度、四元数往返）。
-- **两视图编排 + 管线接线**：`sfm/pipeline.py` 的 `two_view_reconstruction` 串起检测→匹配→F→位姿→三角化（含
+  （已知 3D↔2D + K 的线性 DLT，由 det 定尺度、投影回 SO(3)，为多视图增量注册所需），鲁棒绝对位姿 `ransac_pnp`
+  （6 点 DLT 采样 + 全点 DLT/LM 种子、重投影计内点取最优模型）与其内核 `refine_pnp_gauss_newton`（Levenberg-Marquardt
+  最小化重投影 SSE，左扰动 exp 坐标 6 自由度，带阻尼与单调接受保护，把有偏 DLT 初值拉回正确位姿），以及 `matrix_to_quat`
+  （分支法、约定 w≥0，对齐 COLMAP images.txt 惯例）；均由合成已知位姿数据验证（极线残差、内点回收、三角化
+  与位姿复原精度、PnP 往返、LM 从扰动初值收敛、外点剔除、四元数往返）。
+- **两视图编排 + 多视图增量注册**：`sfm/pipeline.py` 的 `two_view_reconstruction` 串起检测→匹配→F→位姿→三角化（含
   两相机前方点过滤），`select_best_pair` 在受限候选帧对（相邻对 + 首帧对全体，线性 O(n)）中按 RANSAC 内点择优；
-  `stages/sfm.Real` 作为管线第一步对选出的最优帧对跑真实两视图重建，落 COLMAP 兼容 `cameras.txt`/
-  `images.txt`/`points3D.ply` + 诚实 `stats.json`（匹配/内点<8 或不可注册即明确报错，不静默假成功）。多视图增量
-  注册 + BA 仍为后续里程碑（`stages/mvs.Real` 等仍为 `NotImplementedReal`）。
+  `incremental_reconstruction` 以选出的最优初始对建首段两视图地图（世界系=初始帧 a、尺度由首对单位基线定），
+  向未注册帧做 2D-3D 特征迁移并用 `ransac_pnp` 求绝对位姿、以内点扩展轨迹，逐帧增量注册（重叠不足/内点不够的帧
+  诚实不注册）；输出 `ReconstructionResult`（N 帧 `RegisteredCamera` + 3D 点 + 轨迹）。`stages/sfm.Real`
+  作为管线第一步对选出的最优帧对跑真实两视图重建，落 COLMAP 兼容 `cameras.txt`/
+  `images.txt`/`points3D.ply` + 诚实 `stats.json`（匹配/内点<8 或不可注册即明确报错，不静默假成功）；把 Real 从
+  两视图升级到 `incremental_reconstruction` 的 N 帧输出、及新点三角化增长 + 全局 BA 仍为后续里程碑（`stages/mvs.Real` 等仍为 `NotImplementedReal`）。
 
 ## 8. 与 PRD 里程碑映射
 

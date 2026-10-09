@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from multisight.sfm import (TwoViewResult, candidate_pairs, select_best_pair,
+from multisight.sfm import (ReconstructionResult, TwoViewResult, candidate_pairs,
+                            incremental_reconstruction, select_best_pair,
                             two_view_reconstruction, default_K)
 
 
@@ -109,3 +110,56 @@ def test_select_best_pair_picks_the_overlapping_pair():
                                    max_corners=600, ransac_threshold=2.0, seed=0)
     assert (i, j) == (1, 2)
     assert res.registered and res.num_inliers >= 8
+
+
+def _synthetic_scene(n_frames=4, n_pts=90, seed=7, W=420, H=300, focal=500.0, patch_px=9):
+    """同一批 3D 点（唯一纹理 patch）由具充足基线的相机序列观测，返回帧列表。
+
+    基线足够大（避免小基线三角化在尺度放大下产生巨大深度误差，那是 SfM 的经典病态）。
+    """
+    rng = np.random.default_rng(seed)
+    K = default_K((H, W), focal)
+    X = np.column_stack([rng.uniform(-1.2, 1.2, n_pts), rng.uniform(-0.9, 0.9, n_pts),
+                         rng.uniform(4.5, 6.5, n_pts)])
+    frames_pose = []
+    for k in range(n_frames):
+        Rk = _rot("y", np.radians(4.0 * k))
+        tk = np.array([0.35 * k, 0.03 * k, 0.0])
+        frames_pose.append((Rk, tk))
+    Ps = [K @ np.hstack([Rk, tk[:, None]]) for Rk, tk in frames_pose]
+    projs = [_project(P, X) for P in Ps]
+    m = patch_px // 2 + 6
+    keep = np.ones(n_pts, dtype=bool)
+    for pxy in projs:
+        keep &= ((pxy[:, 0] > m) & (pxy[:, 0] < W - m) & (pxy[:, 1] > m) & (pxy[:, 1] < H - m))
+    idx = np.where(keep)[0]
+    Xv = X[idx]
+    projs = [pxy[idx] for pxy in projs]
+    patches = [20 + 215 * rng.random((patch_px, patch_px)) for _ in range(len(idx))]
+    frames = [_render((H, W), pxy, patches) for pxy in projs]
+    return frames, Xv, frames_pose
+
+
+def test_incremental_reconstruction_registers_multiple_views():
+    frames, _X, _pose = _synthetic_scene(n_frames=4)
+    res = incremental_reconstruction(frames, focal=500.0, max_corners=600,
+                                     ransac_threshold=2.0, pnp_reproj_px=8.0,
+                                     min_pnp_inliers=8, seed=0)
+    assert isinstance(res, ReconstructionResult)
+    assert res.ok
+    assert res.num_registered >= 3                 # 至少初始对 + 多一帧
+    assert len(res.points3d) >= 8
+    for cam in res.cameras:
+        assert cam.R.shape == (3, 3)
+        assert np.allclose(cam.R @ cam.R.T, np.eye(3), atol=1e-6)
+        assert abs(np.linalg.det(cam.R) - 1.0) < 1e-6
+    # 初始帧位姿为恒等（世界系 = 初始帧 a）
+    a = res.initial_pair[0]
+    ident = next(c for c in res.cameras if c.index == a)
+    assert np.allclose(ident.R, np.eye(3), atol=1e-9)
+
+
+def test_incremental_reconstruction_needs_two_images():
+    import pytest
+    with pytest.raises(ValueError):
+        incremental_reconstruction([np.zeros((50, 50))])
