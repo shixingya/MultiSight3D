@@ -159,6 +159,18 @@ def test_incremental_reconstruction_registers_multiple_views():
     assert np.allclose(ident.R, np.eye(3), atol=1e-9)
 
 
+def test_incremental_reconstruction_bundle_does_not_worsen_reproj():
+    frames, _X, _pose = _synthetic_scene(n_frames=4)
+    kw = dict(focal=500.0, max_corners=600, ransac_threshold=2.0,
+              pnp_reproj_px=8.0, min_pnp_inliers=8, seed=0)
+    raw = incremental_reconstruction(frames, refine=False, **kw)
+    ba = incremental_reconstruction(frames, refine=True, **kw)
+    assert ba.bundle_applied and not raw.bundle_applied
+    assert np.isfinite(ba.mean_reproj_px) and np.isfinite(raw.mean_reproj_px)
+    assert ba.mean_reproj_px <= raw.mean_reproj_px + 1e-3     # LM 单调：不劣于未 BA
+    assert ba.num_registered == raw.num_registered            # BA 不改变注册数
+
+
 def test_incremental_reconstruction_needs_two_images():
     import pytest
     with pytest.raises(ValueError):

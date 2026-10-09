@@ -161,8 +161,10 @@ Butian3D 前端资产：ReconScene 资产加载位、SSE token 方案）。
 - **全局捆绑调整（`sfm/bundle.py`）**：`bundle_adjustment` 以 Levenberg-Marquardt 在「各相机 6 自由度（左扰动 exp）
   + 各 3D 点 3 自由度」上联合最小化总重投影 SSE（`mean_reprojection_error` 为质量指标）；解析雅可比（相机块
   `dpx@[-[RX]×|I]`、点块 `dpx@R`）经数值有限差分验证，带阻尼与单调接受保护；完全固定首相机以消除 7 自由度规范歧义。
-  合成场景上从扰动初值回落到真值 basin（均重投影 <1e-4 px）。接入增量注册输出与 Real 阶段为下一里程碑（新点三角化
-  增长也待落地；`stages/mvs.Real` 等仍为 `NotImplementedReal`）。
+  合成场景上从扰动初值回落到真值 basin（均重投影 <1e-4 px）。`incremental_reconstruction(refine=True)` 在逐帧注册
+  完成后自动跑一轮全局 BA（`_bundle_refine`：由轨迹+角点像素构造 2D-3D 观测、以初始帧为锚固定 gauge、就地写回位姿/结构，
+  失败则仅报质量指标不降级注册）；`ReconstructionResult` 新增 `bundle_applied`/`mean_reproj_px`，`stages/sfm.Real` 的
+  `stats.json` 露出两者。新点三角化增长为下一里程碑（`stages/mvs.Real` 等仍为 `NotImplementedReal`）。
 
 ## 8. 与 PRD 里程碑映射
 

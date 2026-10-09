@@ -71,7 +71,11 @@ def test_real_sfm_writes_colmap_products(tmp_path):
     assert stats["engine"] == "real/incremental"
     assert stats["registered"] == 2 and stats["total"] == 2
     assert stats["initial_inliers"] >= 8 and stats["sparse_points"] > 0
-    assert abs(np.linalg.norm(stats["baseline"]) - 1.0) < 1e-3  # 初始基线单位化
+    # 全局 BA 已应用：均重投影有限且小；基线长度由 BA 定（尺度 gauge，不再强制单位）
+    assert stats["bundle_applied"] is True
+    assert stats["mean_reproj_px"] is not None and stats["mean_reproj_px"] < 2.0
+    bl = np.linalg.norm(stats["baseline"])
+    assert 0.5 < bl < 1.5
 
 
 def test_real_sfm_registers_multiple_frames(tmp_path):

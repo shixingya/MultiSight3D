@@ -16,6 +16,7 @@ import numpy as np
 from .features import detect_and_describe, match_descriptors, to_gray
 from .geometry import (estimate_fundamental, ransac_fundamental, recover_pose,
                        ransac_pnp)
+from .bundle import bundle_adjustment, mean_reprojection_error
 
 
 @dataclass
@@ -176,6 +177,8 @@ class ReconstructionResult:
     num_registered: int = 0
     initial_pair: tuple[int, int] = (-1, -1)
     pnp_inliers: dict[int, int] = field(default_factory=dict)  # frame_idx -> pnp 内点数
+    bundle_applied: bool = False
+    mean_reproj_px: float = float("nan")               # BA 后均重投影误差（未 BA 则为注册后直接计算）
 
     @property
     def ok(self) -> bool:
@@ -185,12 +188,13 @@ class ReconstructionResult:
 def incremental_reconstruction(images, *, focal: float | None = None, max_corners: int = 600,
                                patch: int = 8, ratio: float = 0.8, ransac_iters: int = 300,
                                ransac_threshold: float = 1.0, pnp_reproj_px: float = 4.0,
-                               min_pnp_inliers: int = 10,
+                               min_pnp_inliers: int = 10, refine: bool = True,
                                seed: int = 0) -> ReconstructionResult:
-    """增量注册：选最优初始对做两视图→建 3D 轨→逐帧 PnP（2D-3D 迁移 + RANSAC）注册。
+    """增量注册：选最优初始对做两视图→建 3D 轨→逐帧 PnP（2D-3D 迁移 + RANSAC）注册→（可选）全局 BA。
 
     v0.1 范围：以初始对三角化的 3D 点为地图，向后续帧做特征迁移并用 RANSAC-PnP 求位姿；
-    新点三角化增长 + 全局 BA 为下一里程碑。重叠不足/内点不够的帧会诚实地不被注册。
+    refine=True 时再跑一轮全局捆绑调整联合精化位姿与结构（新点三角化增长为下一里程碑）。
+    重叠不足/内点不够的帧会诚实地不被注册。
     """
     grays, feats = _extract_features(images, max_corners, patch)
     n = len(grays)
@@ -273,4 +277,39 @@ def incremental_reconstruction(images, *, focal: float | None = None, max_corner
 
     res.cameras.sort(key=lambda cm: cm.index)
     res.num_registered = len(res.cameras)
+    _bundle_refine(res, feats, a, refine)
     return res
+
+
+def _bundle_refine(res: ReconstructionResult, feats, anchor: int, refine: bool) -> None:
+    """把注册结果转为 BA 观测并（可选）联合精化位姿与结构；就地写回 res。
+
+    BA 固定首参数为锚点相机（世界系 = 初始帧 anchor，保 gauge）；观测不足或 BA 失败则仅算质量指标（诚实降级）。
+    """
+    if len(res.cameras) < 2 or len(res.points3d) == 0 or res.K is None:
+        return
+    by_index = {cm.index: cm for cm in res.cameras}
+    order = [anchor] + [cm.index for cm in res.cameras if cm.index != anchor]
+    pos = {f: k for k, f in enumerate(order)}
+    ba_cams = [(np.asarray(by_index[f].R, dtype=np.float64).copy(),
+                np.asarray(by_index[f].t, dtype=np.float64).copy()) for f in order]
+    meas = []
+    for tid, obs in enumerate(res.tracks):
+        for frame, corner_idx in obs.items():
+            k = pos.get(frame)
+            if k is None:
+                continue
+            corner = feats[frame][0][corner_idx]
+            meas.append((k, tid, float(corner.x), float(corner.y)))
+    if len(meas) < 6:
+        return
+    if refine:
+        try:
+            ba_cams, X, _ = bundle_adjustment(res.K, ba_cams, res.points3d, meas)
+            res.points3d = X
+            res.bundle_applied = True
+        except (ValueError, np.linalg.LinAlgError):
+            pass
+    res.mean_reproj_px = float(mean_reprojection_error(res.K, ba_cams, res.points3d, meas))
+    for k, f in enumerate(order):
+        by_index[f].R, by_index[f].t = ba_cams[k]

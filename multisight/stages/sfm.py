@@ -96,9 +96,12 @@ class Real(Stage):
             "initial_inliers": int(b_cam.num_inliers),
             "sparse_points": int(len(res.points3d)),
             "baseline": [round(float(x), 6) for x in b_cam.t],
+            "bundle_applied": bool(res.bundle_applied),
+            "mean_reproj_px": (round(float(res.mean_reproj_px), 4)
+                              if np.isfinite(res.mean_reproj_px) else None),
             "pnp_inliers": {cand[cm.index]["file"]: int(cm.num_inliers) for cm in cams
                             if cm.index not in (a_idx, b_idx)},
-            "note": "v0.1 增量注册：候选对择优建初始两视图 + 逐帧 RANSAC-PnP；全局 BA 待落地",
+            "note": "v0.1 增量注册：候选对择优建初始两视图 + 逐帧 RANSAC-PnP + 全局 BA（新点增长待落地）",
         }
         (ctx.ws.root / "sfm" / "stats.json").write_text(
             json.dumps(stats, ensure_ascii=False, indent=2), encoding="utf-8")
