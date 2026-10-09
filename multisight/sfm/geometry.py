@@ -167,6 +167,58 @@ def recover_pose(F: np.ndarray, K: np.ndarray, pts1: np.ndarray, pts2: np.ndarra
     return best[1], best[2], best[3]
 
 
+def project(K: np.ndarray, R: np.ndarray, t: np.ndarray,
+            X: np.ndarray) -> np.ndarray:
+    """世界系 3D 点 (N,3) 经 x=K[R|t]X 投影为像素 (N,2)。"""
+    X = np.asarray(X, dtype=np.float64)
+    xc = X @ np.asarray(R, dtype=np.float64).T + np.asarray(t, dtype=np.float64)
+    hx = np.asarray(K, dtype=np.float64) @ xc.T
+    return (hx[:2] / hx[2:3]).T
+
+
+def _pnp_reproj_errors(K, R, t, X, x) -> np.ndarray:
+    return np.linalg.norm(project(K, R, t, X) - np.asarray(x, dtype=np.float64), axis=1)
+
+
+def ransac_pnp(K: np.ndarray, points3d: np.ndarray, points2d: np.ndarray, *,
+              iters: int = 200, threshold: float = 4.0, seed: int = 0
+              ) -> tuple[np.ndarray | None, np.ndarray | None, np.ndarray]:
+    """鲁棒 PnP：RANSAC 采样 6 对 DLT 求位姿 + 重投影误差计内点。返回 (R, t, 内点掩码)。
+
+    threshold 为像素重投影误差。点数不足 6 或无有效样本→ (None, None, 全 False)。固定 seed 保确定性。
+    """
+    X = np.asarray(points3d, dtype=np.float64)
+    x = np.asarray(points2d, dtype=np.float64)
+    n = len(X)
+    if n < 6 or len(x) != n:
+        return None, None, np.zeros(n, dtype=bool)
+    rng = np.random.default_rng(seed)
+    best_mask = np.zeros(n, dtype=bool)
+    best_R: np.ndarray | None = None
+    best_t: np.ndarray | None = None
+    best_count = -1
+    for _ in range(iters):
+        idx = rng.choice(n, size=6, replace=False)
+        try:
+            R, t = solve_pnp_dlt(K, X[idx], x[idx])
+        except (ValueError, np.linalg.LinAlgError):
+            continue
+        err = _pnp_reproj_errors(K, R, t, X, x)
+        if not np.isfinite(err).all():
+            continue
+        mask = err < threshold
+        c = int(mask.sum())
+        if c > best_count:
+            best_count, best_mask, best_R, best_t = c, mask, R, t
+    if best_R is not None and best_count >= 6:          # 用全部内点重估
+        try:
+            best_R, best_t = solve_pnp_dlt(K, X[best_mask], x[best_mask])
+            best_mask = _pnp_reproj_errors(K, best_R, best_t, X, x) < threshold
+        except (ValueError, np.linalg.LinAlgError):
+            pass
+    return best_R, best_t, best_mask
+
+
 def _project_to_so3(R: np.ndarray) -> np.ndarray:
     """把任意 3×3 投影到最近旋转（SVD 极分解），强制右手系 det=+1。"""
     U, _S, Vt = np.linalg.svd(R)

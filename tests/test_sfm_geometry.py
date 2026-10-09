@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 
 from multisight.sfm import (estimate_fundamental, ransac_fundamental, triangulate,
-                            recover_pose, solve_pnp_dlt, matrix_to_quat)
+                            recover_pose, solve_pnp_dlt, ransac_pnp, project, matrix_to_quat)
 
 
 def _rot(axis: str, ang: float) -> np.ndarray:
@@ -149,6 +149,39 @@ def test_solve_pnp_requires_min_points():
     K = np.eye(3)
     with pytest.raises(ValueError):
         solve_pnp_dlt(K, np.zeros((5, 3)), np.zeros((5, 2)))
+
+
+def test_project_forward_consistent_with_manual_projection():
+    K = np.array([[600.0, 0, 320], [0, 600.0, 240], [0, 0, 1]])
+    R = _rot("y", np.radians(15))
+    t = np.array([0.1, 0.2, 0.3])
+    X = np.array([[0.0, 0.0, 4.0], [1.0, -0.5, 5.0]])
+    P = np.hstack([R, t[:, None]])
+    manual = (K @ (P @ np.hstack([X, np.ones((len(X), 1))]).T))
+    manual = (manual[:2] / manual[2:3]).T
+    assert np.allclose(project(K, R, t, X), manual, atol=1e-9)
+
+
+def test_ransac_pnp_rejects_outliers():
+    rng = np.random.default_rng(31)
+    K = np.array([[600.0, 0, 320], [0, 600.0, 240], [0, 0, 1]])
+    n = 25
+    X = np.column_stack([rng.uniform(-1, 1, n), rng.uniform(-1, 1, n), rng.uniform(3, 6, n)])
+    R = _rot("y", np.radians(10)) @ _rot("x", np.radians(-5))
+    t = np.array([0.2, -0.1, 0.3])
+    pts = project(K, R, t, X)
+    n_out = 10
+    Xo = np.vstack([X, X[rng.permutation(n)[:n_out]]])
+    xo = np.vstack([pts, pts[rng.permutation(n)[:n_out]] + rng.uniform(40, 90, (n_out, 2))])
+    truth = np.zeros(len(Xo), dtype=bool)
+    truth[:n] = True
+    Rr, tr, mask = ransac_pnp(K, Xo, xo, iters=300, threshold=3.0, seed=0)
+    assert Rr is not None
+    tp = int((mask & truth).sum())
+    fp = int((mask & ~truth).sum())
+    assert tp >= 0.8 * n            # 回收大部分真内点
+    assert fp <= 0.2 * n_out        # 外点绝大多数被拒
+    assert float(np.dot(tr, t) / (np.linalg.norm(tr) * np.linalg.norm(t))) > 0.98  # 平移方向正确
 
 
 def _quat_to_matrix(q):
