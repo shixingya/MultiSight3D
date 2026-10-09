@@ -11,12 +11,14 @@ from __future__ import annotations
 from .features import (
     Corner, detect_corners, describe, detect_and_describe, match_descriptors, to_gray,
 )
-from .geometry import estimate_fundamental, ransac_fundamental, triangulate, recover_pose
+from .geometry import (estimate_fundamental, ransac_fundamental, triangulate,
+                       recover_pose, matrix_to_quat)
 from .pipeline import TwoViewResult, default_K, two_view_reconstruction
 
 __all__ = [
     "Corner", "detect_corners", "describe", "detect_and_describe",
     "match_descriptors", "to_gray",
     "estimate_fundamental", "ransac_fundamental", "triangulate", "recover_pose",
+    "matrix_to_quat",
     "TwoViewResult", "default_K", "two_view_reconstruction",
 ]

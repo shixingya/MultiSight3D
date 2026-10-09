@@ -39,15 +39,18 @@ def test_full_mock_pipeline(tmp_path, photos_dir):
     assert events[-1]["ok"] is True
 
 
-def test_real_engine_fails_at_sfm_and_keeps_products(tmp_path, photos_dir):
+def test_real_engine_fails_past_sfm_and_keeps_products(tmp_path, photos_dir):
+    # 两视图 SfM 已落地；合成噪声夹具的真实链路仍会在某个未落地阶段如实失败，
+    # 关键是失败隔离：更早阶段的产物不被清空。sfm 正确性由 test_sfm_stage 精确覆盖。
     ws = _prepare_ws(tmp_path, photos_dir)
     ok = run_pipeline(ws, engine="real")
     assert not ok
     m = ws.manifest
     assert m["stages"]["preprocess"]["status"] == "done"   # 预处理是真实实现
-    assert m["stages"]["sfm"]["status"] == "failed"
-    assert "v0.1" in m["stages"]["sfm"]["error"]           # 归因指向里程碑
     assert (ws.root / "images" / "list.json").is_file()    # 已完成产物未清空
+    failed = [s for s in STAGES if m["stages"][s]["status"] == "failed"]
+    assert failed
+    assert STAGES.index(failed[0]) > STAGES.index("preprocess")  # 失败在预处理之后
 
 
 def test_resume_after_failure(tmp_path, photos_dir):

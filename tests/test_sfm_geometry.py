@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from multisight.sfm import estimate_fundamental, ransac_fundamental, triangulate, recover_pose
+from multisight.sfm import estimate_fundamental, ransac_fundamental, triangulate, recover_pose, matrix_to_quat
 
 
 def _rot(axis: str, ang: float) -> np.ndarray:
@@ -126,3 +126,24 @@ def test_recover_pose_matches_ground_truth():
     # 单对视图尺度不可观：t 归一→重建缩放 1/|t|，应与真值成比例
     scale = 1.0 / np.linalg.norm(t)
     assert np.allclose(X_rec, X * scale, atol=1e-4)
+
+
+def _quat_to_matrix(q):
+    w, x, y, z = q
+    return np.array([
+        [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+        [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+        [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+    ])
+
+
+def test_matrix_to_quat_roundtrip():
+    R = _rot("y", np.radians(37)) @ _rot("z", np.radians(-52))
+    q = matrix_to_quat(R)
+    assert q[0] >= 0                                  # 约定 w≥0
+    assert abs(np.linalg.norm(q) - 1.0) < 1e-9
+    assert np.allclose(_quat_to_matrix(q), R, atol=1e-9)
+
+
+def test_matrix_to_quat_identity():
+    assert matrix_to_quat(np.eye(3)) == (1.0, 0.0, 0.0, 0.0)

@@ -165,3 +165,38 @@ def recover_pose(F: np.ndarray, K: np.ndarray, pts1: np.ndarray, pts2: np.ndarra
         R, t = cands[0][0], cands[0][1] / np.linalg.norm(cands[0][1])
         return R, t, np.full((len(pts1), 3), np.nan)
     return best[1], best[2], best[3]
+
+
+def matrix_to_quat(R: np.ndarray) -> tuple[float, float, float, float]:
+    """旋转矩阵 → 单位四元数 (w, x, y, z)（COLMAP images.txt 惯例，数值稳定分支法）。"""
+    R = np.asarray(R, dtype=np.float64)
+    trace = R[0, 0] + R[1, 1] + R[2, 2]
+    if trace > 0:
+        s = np.sqrt(trace + 1.0) * 2.0
+        w = 0.25 * s
+        x = (R[2, 1] - R[1, 2]) / s
+        y = (R[0, 2] - R[2, 0]) / s
+        z = (R[1, 0] - R[0, 1]) / s
+    elif R[0, 0] > R[1, 1] and R[0, 0] > R[2, 2]:
+        s = np.sqrt(1.0 + R[0, 0] - R[1, 1] - R[2, 2]) * 2.0
+        w = (R[2, 1] - R[1, 2]) / s
+        x = 0.25 * s
+        y = (R[0, 1] + R[1, 0]) / s
+        z = (R[0, 2] + R[2, 0]) / s
+    elif R[1, 1] > R[2, 2]:
+        s = np.sqrt(1.0 + R[1, 1] - R[0, 0] - R[2, 2]) * 2.0
+        w = (R[0, 2] - R[2, 0]) / s
+        x = (R[0, 1] + R[1, 0]) / s
+        y = 0.25 * s
+        z = (R[1, 2] + R[2, 1]) / s
+    else:
+        s = np.sqrt(1.0 + R[2, 2] - R[0, 0] - R[1, 1]) * 2.0
+        w = (R[1, 0] - R[0, 1]) / s
+        x = (R[0, 2] + R[2, 0]) / s
+        y = (R[1, 2] + R[2, 1]) / s
+        z = 0.25 * s
+    q = np.array([w, x, y, z])
+    q /= np.linalg.norm(q)
+    if q[0] < 0:
+        q = -q                              # 约定 w≥0，写法唯一
+    return (float(q[0]), float(q[1]), float(q[2]), float(q[3]))
