@@ -125,3 +125,43 @@ def triangulate(P1: np.ndarray, P2: np.ndarray,
             continue
         out[i] = X[:3] / X[3]
     return out
+
+
+def recover_pose(F: np.ndarray, K: np.ndarray, pts1: np.ndarray, pts2: np.ndarray
+                ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """从基础矩阵 F 与内参 K 恢复相机2 相对位姿 [R|t]（相机1=[I|0]）。
+
+    E=KᵀFK 的 SVD 分解出 4 组候选 (R,±t)，逐组三角化，取两相机均正深度（手性）
+    点数最多的一；返回 (R, t(单位长), X)。t 尺度不可观（单对视图），以单位向量表示。
+    """
+    F = np.asarray(F, dtype=np.float64)
+    K = np.asarray(K, dtype=np.float64)
+    E = K.T @ F @ K
+    U, _S, Vt = np.linalg.svd(E)
+    W = np.array([[0.0, 1.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
+    if np.linalg.det(U @ Vt) < 0:
+        U = U * np.array([1, 1, -1])            # 强制右手系
+    R1 = U @ W @ Vt
+    R2 = U @ W.T @ Vt
+    u3 = U[:, 2]
+    cands = [(R1, u3), (R1, -u3), (R2, u3), (R2, -u3)]
+    P1 = K @ np.hstack([np.eye(3), np.zeros((3, 1))])
+    best: tuple[int, np.ndarray, np.ndarray, np.ndarray] | None = None
+    for R, t in cands:
+        if np.linalg.det(R) < 0:
+            R = R * -1.0
+        P2 = K @ np.hstack([R, t[:, None]])
+        X = triangulate(P1, P2, pts1, pts2)
+        ok = ~np.isnan(X).any(axis=1)
+        if not ok.any():
+            continue
+        Xf = X[ok]
+        z1 = Xf[:, 2]
+        z2 = (R @ Xf.T)[2] + t[2]
+        score = int(np.count_nonzero((z1 > 0) & (z2 > 0)))
+        if best is None or score > best[0]:
+            best = (score, R, t / np.linalg.norm(t), X)
+    if best is None:
+        R, t = cands[0][0], cands[0][1] / np.linalg.norm(cands[0][1])
+        return R, t, np.full((len(pts1), 3), np.nan)
+    return best[1], best[2], best[3]

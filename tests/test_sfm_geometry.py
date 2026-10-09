@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from multisight.sfm import estimate_fundamental, ransac_fundamental, triangulate
+from multisight.sfm import estimate_fundamental, ransac_fundamental, triangulate, recover_pose
 
 
 def _rot(axis: str, ang: float) -> np.ndarray:
@@ -100,3 +100,29 @@ def test_triangulate_recovers_3d_points():
     Xh = triangulate(P1, P2, pts1, pts2)
     assert not np.isnan(Xh).any()
     assert np.allclose(Xh, X, atol=1e-6)   # 精确投影→三角化应近乎复原
+
+
+def test_recover_pose_matches_ground_truth():
+    rng = np.random.default_rng(11)
+    K = np.array([[600.0, 0, 320], [0, 600.0, 240], [0, 0, 1]])
+    n = 60
+    X = np.column_stack([rng.uniform(-1, 1, n), rng.uniform(-1, 1, n), rng.uniform(3, 6, n)])
+    R = _rot("y", np.radians(10)) @ _rot("x", np.radians(6))
+    t = np.array([0.35, 0.02, 0.05])
+    tx = np.array([[0, -t[2], t[1]], [t[2], 0, -t[0]], [-t[1], t[0], 0]])
+    F = np.linalg.inv(K).T @ (tx @ R) @ np.linalg.inv(K)
+    F /= np.linalg.norm(F)
+    P1 = K @ np.hstack([np.eye(3), np.zeros((3, 1))])
+    P2 = K @ np.hstack([R, t[:, None]])
+    def proj(P):
+        x = P @ np.hstack([X, np.ones((n, 1))]).T
+        return (x[:2] / x[2:3]).T
+    pts1, pts2 = proj(P1), proj(P2)
+
+    R_rec, t_rec, X_rec = recover_pose(F, K, pts1, pts2)
+    assert np.allclose(R_rec, R, atol=1e-6)          # 旋转精确恢复
+    t_hat = t / np.linalg.norm(t)
+    assert float(np.dot(t_rec, t_hat)) > 0.99        # 平移方向正确
+    # 单对视图尺度不可观：t 归一→重建缩放 1/|t|，应与真值成比例
+    scale = 1.0 / np.linalg.norm(t)
+    assert np.allclose(X_rec, X * scale, atol=1e-4)
