@@ -1,14 +1,23 @@
 # MultiSight3D
 
-> 开源多视图摄影测量管线：普通相机/手机环绕拍摄的多张照片 → 自动重建带纹理的三维网格模型（OBJ / PLY / GLB）。
+> 手机围着物体拍一圈（30–150 张），还你一个**带真实纹理的三维模型**（GLB / OBJ / PLY），直接丢进 Blender、切片软件或网页展示。
+> **全程本地运行，照片数据不出你的电脑**；**零重型依赖**——不用装 CUDA、不用编译 C++，pip 装完就能跑。
 
 ![license](https://img.shields.io/badge/license-Apache--2.0-blue)
 ![python](https://img.shields.io/badge/python-%E2%89%A53.10-brightgreen)
 ![ci](https://img.shields.io/badge/ci-passing-informational)
 
-MultiSight3D 追求 **「一条命令进，一个 GLB 出」**：比 COLMAP 更易用、比消费级 App 更可控、可嵌入第三方产品。当前处于 **v0.1 骨架**阶段——管线状态机、CLI、WebUI、SSE 实时进度、产物下载与 3D 预览已端到端可跑（内置 mock 引擎）；自研算法按[里程碑](./doc/PRD.md)逐版本落地。
+**为什么不用其他方案？**
 
-📖 **文档**：[产品需求 PRD](./doc/PRD.md) · [架构说明](./doc/ARCHITECTURE.md)
+| 痛点方案 | 问题 | MultiSight3D |
+| --- | --- | --- |
+| COLMAP / Meshroom | 无纹理网格闭环，装完半天、出 GLB 还要多工具拼接 | 一条命令到纹理模型 |
+| RealityCapture / Metashape | 闭源，授权数千至数万美元/年 | Apache-2.0，可商用可审计 |
+| Polycam / Luma 等 App | 上传云端、导出收费、精度不可控 | 本地跑、数据私有、参数全开 |
+
+产品哲学是 **「一条命令进，一个 GLB 出」**；另一个卖点是诚实：未落地的阶段会明确报错并指向里程碑，**不会静默假成功**。当前处于 **v0.1** 阶段——管线状态机、CLI、WebUI、SSE 实时进度、产物下载与 3D 预览已端到端可跑（内置 mock 引擎），自研算法按[里程碑](./doc/PRD.md)逐版本落地。
+
+📖 **文档**：[产品需求 PRD](./doc/PRD.md) · [架构说明](./doc/ARCHITECTURE.md) · [传播定位](./doc/POSITIONING.md)
 
 ## ✨ 核心能力（规划 ↔ 现状）
 
@@ -88,7 +97,7 @@ pytest -q          # 全部隔离临时目录，不污染开发数据
 
 ## 💡 适用场景
 
-实物扫描、文物数字化、手办/样品资产重建、小型场景三维采集。
+实物扫描、文物数字化、手办/样品资产重建、小型场景三维采集——无需专业扫描设备，手机多角度拍照即可。
 大范围无人机场景重建请使用姊妹项目 [Butian3D](https://github.com/shixingya/MOLDAI_WEB)；
 未来 MultiSight3D 可作为其开源引擎经适配器接入（`ENGINE=multisight`）。
 
