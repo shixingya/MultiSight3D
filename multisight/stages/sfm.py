@@ -4,8 +4,8 @@ Mock：按环绕轨道合成相机位姿，落盘 COLMAP 兼容目录 + 稀疏�
 用于打通断点续跑 / SSE / 下载全链路。
 Real：自研 SfM 内核（特征→匹配→F→相对位姿→三角化→PnP 增量注册，见 multisight.sfm）
 已作为管线真实一步：在候选帧对（相邻对 + 首帧对全体）中按 RANSAC 内点择优建初始两视图，
-再对其余帧做 2D-3D 迁移 + RANSAC-PnP 逐帧增量注册，输出 N 帧相机/位姿。
-BA（全局束调整）为下一里程碑。
+再对其余帧做 2D-3D 迁移 + RANSAC-PnP 逐帧增量注册，每帧注册后就地结构增长（新点三角化 + 已知点补观测），
+最后可选全局 BA，输出 N 帧相机/位姿与持续生长的稀疏地图。稠密化（MVS）为下一里程碑。
 """
 
 from __future__ import annotations
@@ -56,7 +56,7 @@ class Real(Stage):
 
     诚实原则：特征/匹配不足以建立可靠初始两视图时明确报错（不静默假成功）；
     重叠不足/内点不够的帧会诚实地不被注册（registered 反映真实注册数，非总帧数）。
-    全局 BA 为下一里程碑。
+    每帧注册后就地做结构增长，最后跑一轮全局 BA；稠密化（MVS）为下一里程碑。
     """
 
     name = "sfm"
@@ -85,7 +85,8 @@ class Real(Stage):
         self._write_images(ctx, cams, cand)
         write_ply_ascii(ctx.ws.file("sfm", "points3D.ply"), res.points3d)
         ctx.progress(self.name, 85,
-                     f"三角化/迁移：稀疏点 {len(res.points3d)} 个，注册 {res.num_registered}/{len(cand)} 帧")
+                     f"三角化/结构增长：稀疏点 {len(res.points3d)} 个（含新增 {res.grown_points}），"
+                     f"注册 {res.num_registered}/{len(cand)} 帧")
         b_cam = next(cm for cm in cams if cm.index == b_idx)
         stats = {
             "engine": "real/incremental",
@@ -97,11 +98,13 @@ class Real(Stage):
             "sparse_points": int(len(res.points3d)),
             "baseline": [round(float(x), 6) for x in b_cam.t],
             "bundle_applied": bool(res.bundle_applied),
+            "grown_points": int(res.grown_points),
+            "extended_observations": int(res.extended_obs),
             "mean_reproj_px": (round(float(res.mean_reproj_px), 4)
                               if np.isfinite(res.mean_reproj_px) else None),
             "pnp_inliers": {cand[cm.index]["file"]: int(cm.num_inliers) for cm in cams
                             if cm.index not in (a_idx, b_idx)},
-            "note": "v0.1 增量注册：候选对择优建初始两视图 + 逐帧 RANSAC-PnP + 全局 BA（新点增长待落地）",
+            "note": "v0.1 增量注册：候选对择优建初始两视图 + 逐帧 RANSAC-PnP + 结构增长（新点三角化）+ 全局 BA",
         }
         (ctx.ws.root / "sfm" / "stats.json").write_text(
             json.dumps(stats, ensure_ascii=False, indent=2), encoding="utf-8")

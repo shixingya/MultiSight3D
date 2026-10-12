@@ -175,3 +175,50 @@ def test_incremental_reconstruction_needs_two_images():
     import pytest
     with pytest.raises(ValueError):
         incremental_reconstruction([np.zeros((50, 50))])
+
+
+def _incremental(frames, **over):
+    kw = dict(focal=500.0, max_corners=600, ransac_threshold=2.0,
+              pnp_reproj_px=8.0, min_pnp_inliers=8, seed=0)
+    kw.update(over)
+    return incremental_reconstruction(frames, **kw)
+
+
+def test_structure_growth_adds_points_beyond_initial_pair():
+    frames, _X, _pose = _synthetic_scene(n_frames=4, n_pts=110)
+    nogrow = _incremental(frames, grow=False, refine=False)
+    grow = _incremental(frames, grow=True, refine=False)
+    assert grow.ok and nogrow.ok
+    assert grow.grown_points > 0                       # 确实三角化了初始对之外的新 3D 点
+    assert len(grow.points3d) > len(nogrow.points3d)   # 增长后地图变大
+    assert len(grow.points3d) == len(nogrow.points3d) + grow.grown_points
+    assert grow.num_registered == nogrow.num_registered  # 增长不改变注册数（只长结构）
+
+
+def test_structure_growth_tracks_points_and_corner_uniqueness_invariant():
+    frames, _X, _pose = _synthetic_scene(n_frames=4, n_pts=110)
+    res = _incremental(frames, grow=True, refine=False)
+    assert len(res.tracks) == len(res.points3d)         # 一轨迹一点
+    seen: dict[tuple[int, int], int] = {}
+    for tid, obs in enumerate(res.tracks):
+        assert obs, "轨迹不应为空"
+        for frame, ci in obs.items():
+            assert (frame, ci) not in seen, "同一角点不得归属两条轨迹"
+            seen[(frame, ci)] = tid
+
+
+def test_structure_growth_does_not_pollute_reprojection():
+    frames, _X, _pose = _synthetic_scene(n_frames=4, n_pts=110)
+    nogrow = _incremental(frames, grow=False, refine=False)
+    grow = _incremental(frames, grow=True, refine=False)
+    # 新增点带重投影守卫，均差不应明显劣于不增长基线
+    assert np.isfinite(grow.mean_reproj_px)
+    assert grow.mean_reproj_px <= nogrow.mean_reproj_px + 2.0
+
+
+def test_structure_growth_ba_still_monotone():
+    frames, _X, _pose = _synthetic_scene(n_frames=4, n_pts=110)
+    raw = _incremental(frames, grow=True, refine=False)
+    ba = _incremental(frames, grow=True, refine=True)
+    assert ba.bundle_applied and not raw.bundle_applied
+    assert ba.mean_reproj_px <= raw.mean_reproj_px + 1e-3   # LM 单调：BA 不劣于未 BA

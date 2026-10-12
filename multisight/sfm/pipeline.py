@@ -15,7 +15,7 @@ import numpy as np
 
 from .features import detect_and_describe, match_descriptors, to_gray
 from .geometry import (estimate_fundamental, ransac_fundamental, recover_pose,
-                       ransac_pnp)
+                       ransac_pnp, triangulate, project)
 from .bundle import bundle_adjustment, mean_reprojection_error
 
 
@@ -179,6 +179,8 @@ class ReconstructionResult:
     pnp_inliers: dict[int, int] = field(default_factory=dict)  # frame_idx -> pnp 内点数
     bundle_applied: bool = False
     mean_reproj_px: float = float("nan")               # BA 后均重投影误差（未 BA 则为注册后直接计算）
+    grown_points: int = 0                              # 增量注册中三角化的新 3D 点数（结构增长）
+    extended_obs: int = 0                              # 已知点获得的新观测补记数（强化地图/BA）
 
     @property
     def ok(self) -> bool:
@@ -189,11 +191,12 @@ def incremental_reconstruction(images, *, focal: float | None = None, max_corner
                                patch: int = 8, ratio: float = 0.8, ransac_iters: int = 300,
                                ransac_threshold: float = 1.0, pnp_reproj_px: float = 4.0,
                                min_pnp_inliers: int = 10, refine: bool = True,
-                               seed: int = 0) -> ReconstructionResult:
-    """增量注册：选最优初始对做两视图→建 3D 轨→逐帧 PnP（2D-3D 迁移 + RANSAC）注册→（可选）全局 BA。
+                               grow: bool = True, seed: int = 0) -> ReconstructionResult:
+    """增量注册：选最优初始对做两视图→建 3D 轨→逐帧 PnP（2D-3D 迁移 + RANSAC）注册→（可选）结构增长→（可选）全局 BA。
 
     v0.1 范围：以初始对三角化的 3D 点为地图，向后续帧做特征迁移并用 RANSAC-PnP 求位姿；
-    refine=True 时再跑一轮全局捆绑调整联合精化位姿与结构（新点三角化增长为下一里程碑）。
+    grow=True 时每帧注册后就地做结构增长（新点三角化 + 已知点补观测）；
+    refine=True 时再跑一轮全局捆绑调整联合精化位姿与结构。
     重叠不足/内点不够的帧会诚实地不被注册。
     """
     grays, feats = _extract_features(images, max_corners, patch)
@@ -234,6 +237,11 @@ def incremental_reconstruction(images, *, focal: float | None = None, max_corner
         m = iinl[k]
         pts.append(X[k])
         tracks.append({a: int(ia[m]), b: int(ib[m])})
+    # 角点反查索引 frame -> {corner_idx: tid}：结构增长时判重/补观测的关键
+    corner_tid: dict[int, dict[int, int]] = {a: {}, b: {}}
+    for tid, obs in enumerate(tracks):
+        for frame, ci in obs.items():
+            corner_tid.setdefault(frame, {})[ci] = tid
     res.points3d = np.array(pts) if pts else np.zeros((0, 3))
     res.tracks = tracks
     res.cameras = [RegisteredCamera(a, np.eye(3), np.zeros(3), two.num_inliers),
@@ -257,7 +265,7 @@ def incremental_reconstruction(images, *, focal: float | None = None, max_corner
                     continue
                 ic = ir2ic.get(obs[r])
                 if ic is not None:
-                    Xobs.append(res.points3d[tid])
+                    Xobs.append(pts[tid])
                     xobs.append([cc[ic].x, cc[ic].y])
                     tid_of.append(tid)
                     ic_of.append(ic)
@@ -272,13 +280,92 @@ def incremental_reconstruction(images, *, focal: float | None = None, max_corner
         res.cameras.append(RegisteredCamera(c, Rc, tc, ninl))
         res.pnp_inliers[c] = ninl
         registered.add(c)
+        ct = corner_tid.setdefault(c, {})
         for i in np.where(mask)[0]:                     # 用内点扩展轨迹（供后续帧迁移）
-            tracks[tid_of[i]][c] = ic_of[i]
+            ic = ic_of[i]
+            if ic in ct:                                # 该角点已归属别的轨迹 → 跳过，保一像素一三角量（防 BA 双计）
+                continue
+            tracks[tid_of[i]][c] = ic
+            ct[ic] = tid_of[i]
+        # 结构增长：新注册帧与所有已注册帧角点两两匹配，已知点补观测、未知点新增
+        if grow:
+            _grow_structure(res, feats, K, c, registered, pts, tracks, corner_tid,
+                            ratio=ratio, max_reproj_px=pnp_reproj_px)
 
+    res.points3d = np.array(pts) if pts else np.zeros((0, 3))
+    res.tracks = tracks
     res.cameras.sort(key=lambda cm: cm.index)
     res.num_registered = len(res.cameras)
     _bundle_refine(res, feats, a, refine)
     return res
+
+
+def _grow_structure(res: ReconstructionResult, feats, K: np.ndarray, new_frame: int,
+                    registered: set[int], pts: list, tracks: list,
+                    corner_tid: dict, *, ratio: float = 0.8,
+                    min_parallax_deg: float = 1.0, max_reproj_px: float = 4.0) -> None:
+    """增量结构增长（v0.1 下一里程碑）：把新注册帧与已注册帧做角点两两匹配。
+
+    - 新帧角点已归属某轨迹 → 跳过（PnP 阶段已处理）；
+    - 对端角点已知（属轨迹）而新帧角点未知 → 给已知点补一条观测（强化地图/BA）；
+    - 两端角点皆未知 → 用两帧投影矩阵三角化一个新 3D 点（需正深度、足够视差、重投影达标）。
+    就地扩展 pts/tracks/corner_tid 并累计 res.grown_points/extended_obs。诚实原则：
+    退化/小基线/残差过大的候选一律不新增，绝不臆造结构。
+    """
+    cam_by = {cm.index: cm for cm in res.cameras}
+    P_new = K @ np.hstack([cam_by[new_frame].R, cam_by[new_frame].t.reshape(3, 1)])
+    cc = feats[new_frame][0]
+    ct_new = corner_tid.setdefault(new_frame, {})
+    min_par = np.sin(np.radians(min_parallax_deg))
+    for r in registered:
+        if r == new_frame:
+            continue
+        cr = feats[r][0]
+        matches = match_descriptors(feats[new_frame][1], feats[r][1], ratio=ratio, mutual=True)
+        cm_r = cam_by[r]
+        P_r = K @ np.hstack([cm_r.R, cm_r.t.reshape(3, 1)])
+        ct_r = corner_tid.setdefault(r, {})
+        # 相机中心（世界系）= -Rᵀ t，用于视差角判定
+        C_new = -cam_by[new_frame].R.T @ cam_by[new_frame].t
+        C_r = -cm_r.R.T @ cm_r.t
+        for ic, ir in matches:
+            if ic in ct_new:                            # 新帧该角点已有 3D 点
+                continue
+            tid_r = ct_r.get(ir)
+            if tid_r is not None:                       # 已知点：补一条新观测
+                if new_frame not in tracks[tid_r]:
+                    tracks[tid_r][new_frame] = ic
+                    ct_new[ic] = tid_r
+                    res.extended_obs += 1
+                continue
+            pc = np.array([[cc[ic].x, cc[ic].y]], dtype=np.float64)
+            pr = np.array([[cr[ir].x, cr[ir].y]], dtype=np.float64)
+            X = triangulate(P_new, P_r, pc, pr)
+            if np.isnan(X).any():
+                continue
+            x3 = X[0]
+            # 正深度（两相机前方）+ 视差角足够（拒小基线无穷远歧义）
+            d_new = x3 - C_new
+            d_r = x3 - C_r
+            nn, nr = np.linalg.norm(d_new), np.linalg.norm(d_r)
+            if nn <= 1e-9 or nr <= 1e-9:
+                continue
+            cosang = float(np.clip(np.dot(d_new, d_r) / (nn * nr), -1.0, 1.0))
+            if np.sin(np.arccos(cosang)) < min_par:
+                continue
+            if (x3[2] <= 0) or (((cm_r.R @ x3) + cm_r.t)[2] <= 0):
+                continue
+            # 重投影残差守卫（两视图均达标才收）
+            if (np.linalg.norm(project(K, cam_by[new_frame].R, cam_by[new_frame].t, x3[None]) - pc)
+                    > max_reproj_px or
+                    np.linalg.norm(project(K, cm_r.R, cm_r.t, x3[None]) - pr) > max_reproj_px):
+                continue
+            tid = len(pts)
+            pts.append(x3)
+            tracks.append({new_frame: ic, r: ir})
+            ct_new[ic] = tid
+            ct_r[ir] = tid
+            res.grown_points += 1
 
 
 def _bundle_refine(res: ReconstructionResult, feats, anchor: int, refine: bool) -> None:

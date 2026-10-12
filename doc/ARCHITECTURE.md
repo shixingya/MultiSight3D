@@ -158,19 +158,25 @@ Butian3D 前端资产：ReconScene 资产加载位、SSE token 方案）。
   `stages/sfm.Real` 作为管线真实一步直接调 `incremental_reconstruction`，为每张注册帧落一行 COLMAP 兼容
   `cameras.txt`/`images.txt`（初始帧恒等、其余帧由 `matrix_to_quat`）+ `points3D.ply` + 诚实 `stats.json`
   （`registered` 反映真实注册数而非总帧数；初始两视图不可靠即明确报错，不静默假成功）。
+- **增量结构增长**：逐帧 PnP 注册后就地对「新注册帧 × 各已注册帧」做角点两两匹配（`_grow_structure`）——
+  新帧角点若已归属某轨迹则跳过；对端角点已知而新帧角点未知则给该已知点**补一条观测**（`extended_obs`，强化后续
+  PnP 迁移与 BA）；两端皆未知则用两帧投影矩阵 `triangulate` **新增一个 3D 点**（`grown_points`），并施以正深度、
+  视差角（拒小基线无穷远歧义）与两视图重投影残差三重守卫，退化候选一律不收（诚实、不臆造结构）。角点↔轨迹以
+  `corner_tid` 反查索引维护唯一归属（一像素一三角量，防 BA 双计）；地图随之逐帧生长，供后续帧在更丰富的 2D-3D
+  匹配上注册。`ReconstructionResult` 新增 `grown_points`/`extended_obs`，`stages/sfm.Real` 的 `stats.json` 露出两者。
 - **全局捆绑调整（`sfm/bundle.py`）**：`bundle_adjustment` 以 Levenberg-Marquardt 在「各相机 6 自由度（左扰动 exp）
   + 各 3D 点 3 自由度」上联合最小化总重投影 SSE（`mean_reprojection_error` 为质量指标）；解析雅可比（相机块
   `dpx@[-[RX]×|I]`、点块 `dpx@R`）经数值有限差分验证，带阻尼与单调接受保护；完全固定首相机以消除 7 自由度规范歧义。
   合成场景上从扰动初值回落到真值 basin（均重投影 <1e-4 px）。`incremental_reconstruction(refine=True)` 在逐帧注册
   完成后自动跑一轮全局 BA（`_bundle_refine`：由轨迹+角点像素构造 2D-3D 观测、以初始帧为锚固定 gauge、就地写回位姿/结构，
   失败则仅报质量指标不降级注册）；`ReconstructionResult` 新增 `bundle_applied`/`mean_reproj_px`，`stages/sfm.Real` 的
-  `stats.json` 露出两者。新点三角化增长为下一里程碑（`stages/mvs.Real` 等仍为 `NotImplementedReal`）。
+  `stats.json` 露出两者。增量结构增长（新点三角化 + 已知点补观测）已落地（见上）；稠密化 `stages/mvs.Real` 为下一里程碑（仍为 `NotImplementedReal`）。
 
 ## 8. 与 PRD 里程碑映射
 
 | 里程碑 | 交付 | 代码钩子（现已就位） |
 | --- | --- | --- |
-| v0.1 | 骨架 + 自研 SfM | `sfm/`（纯 numpy 特征提取+匹配已落地）；`stages/sfm.Real` 替换点；`_synth` 的 COLMAP 目录即目标落盘格式 |
+| v0.1 | 骨架 + 自研 SfM（特征/匹配/增量注册/结构增长/BA） | `sfm/`（纯 numpy 全链已落地，含逐帧结构增长）；`stages/sfm.Real` 替换点；`_synth` 的 COLMAP 目录即目标落盘格式 |
 | v0.2 | 学习型 MVS + PatchMatch 兜底 | `stages/mvs.Real`；设备探测（CUDA/MPS/CPU）选档在 pipeline.params 扩展 |
 | v0.3 | 网格 + 纹理烘焙 | `mesh.Real` / `texture.Real`；`_synth.write_glb_*` 替换为真实烘焙产物 |
 | v0.4 | 报告/归因/补拍建议/账号隔离 | `report` 已聚合指标与警告；FR-16 加 `server/routes` 鉴权层 |
