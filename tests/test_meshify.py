@@ -10,7 +10,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from multisight.mvs import analyze_mesh_topology, depth_map_to_mesh, depth_map_to_points, weld_mesh_vertices
+from multisight.mvs import analyze_mesh_topology, depth_map_to_mesh, depth_map_to_points, mesh_metrics, weld_mesh_vertices
 
 pytest.importorskip("numpy")
 
@@ -176,3 +176,43 @@ def test_weld_nonpositive_tol_noop():
 def test_weld_empty_noop():
     nv, nf, nc = weld_mesh_vertices(np.zeros((0, 3)), np.zeros((0, 3), np.int64), tol=0.1)
     assert len(nv) == 0 and len(nf) == 0 and nc is None
+
+
+# 单位立方体 [0,1]^3，8 顶点 12 三角面，外定向一致（与 analyze_mesh_topology 共用）
+_CUBE_V = np.array([[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0],
+                    [0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]], float)
+_CUBE_F = np.array([[4, 5, 6], [4, 6, 7],          # top +z
+                    [0, 3, 2], [0, 2, 1],          # bottom -z
+                    [0, 1, 5], [0, 5, 4],          # front -y
+                    [3, 7, 6], [3, 6, 2],          # back +y
+                    [0, 7, 3], [0, 4, 7],          # left -x
+                    [1, 6, 5], [1, 2, 6]], np.int64)   # right +x
+
+
+def test_mesh_metrics_unit_cube_area_volume():
+    m = mesh_metrics(_CUBE_V, _CUBE_F)
+    assert m["area"] == pytest.approx(6.0, abs=1e-6)        # 6 个单位正方形
+    assert m["volume_signed"] == pytest.approx(1.0, abs=1e-6)  # 外定向→正
+    assert m["volume_abs"] == pytest.approx(1.0, abs=1e-6)
+    assert m["bbox_extent"] == [1.0, 1.0, 1.0]
+    # 与水密拓扑一致（同一闭合立方体）
+    assert analyze_mesh_topology(_CUBE_V, _CUBE_F)["is_watertight"]
+
+
+def test_mesh_metrics_open_face_volume_means_surface():
+    # 单三角形（非闭合）：面积正确，有向体积仅为相对于原点的四面体代数量（非真实体积）
+    v = np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0]], float)
+    f = np.array([[0, 1, 2]], np.int64)
+    m = mesh_metrics(v, f)
+    assert m["area"] == pytest.approx(0.5, abs=1e-6)
+    assert m["volume_signed"] == pytest.approx(0.0, abs=1e-6)  # 过原点面→0
+
+
+def test_mesh_metrics_empty_and_vertices_only():
+    m = mesh_metrics(np.zeros((0, 3)), np.zeros((0, 3), np.int64))
+    assert m["area"] == 0.0 and m["volume_abs"] == 0.0
+    assert m["bbox_extent"] == [0.0, 0.0, 0.0]
+    # 有顶点无面：bbox 仍给，面积/体积诚实为 0
+    v = np.array([[0, 0, 0], [2, 3, 4]], float)
+    m2 = mesh_metrics(v, np.zeros((0, 3), np.int64))
+    assert m2["area"] == 0.0 and m2["bbox_extent"] == [2.0, 3.0, 4.0]

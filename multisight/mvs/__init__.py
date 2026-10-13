@@ -14,8 +14,8 @@ from __future__ import annotations
 
 from .depth import plane_sweep_depth
 from .fuse import depth_map_to_points, remove_scatter_noise, voxel_downsample
-from .meshify import analyze_mesh_topology, depth_map_to_mesh, weld_mesh_vertices
+from .meshify import analyze_mesh_topology, depth_map_to_mesh, mesh_metrics, weld_mesh_vertices
 
 __all__ = ["plane_sweep_depth", "depth_map_to_points", "remove_scatter_noise",
            "voxel_downsample", "depth_map_to_mesh", "analyze_mesh_topology",
-           "weld_mesh_vertices"]
+           "mesh_metrics", "weld_mesh_vertices"]

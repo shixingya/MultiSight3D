@@ -106,6 +106,43 @@ def analyze_mesh_topology(vertices, faces):
     }
 
 
+def mesh_metrics(vertices, faces):
+    """网格几何度量（FR-08/FR-09 尺寸估计，纯 numpy）。
+
+    面积：各三角面 ½‖(v1−v0)×(v2−v0)‖ 之和。体积：散度定理 Σ v0·(v1×v2)/6 的有向值
+    （对外定向闭合网格为正；开洞/反定向时为代数量，取绝对值作近似）。bbox 给轴对齐
+    盒尺寸（世界系，单位依上游尺度）。返回 dict；空网格给诚实零值。
+    """
+    v = np.asarray(vertices, dtype=np.float64).reshape(-1, 3)
+    f = np.asarray(faces, dtype=np.int64).reshape(-1, 3)
+    if v.shape[0] == 0:
+        z = [0.0, 0.0, 0.0]
+        return {"area": 0.0, "volume_signed": 0.0, "volume_abs": 0.0,
+                "bbox_min": z, "bbox_max": z, "bbox_extent": z}
+    if f.shape[0] == 0:
+        mn = v.min(axis=0)
+        mx = v.max(axis=0)
+        return {"area": 0.0, "volume_signed": 0.0, "volume_abs": 0.0,
+                "bbox_min": [round(float(x), 6) for x in mn],
+                "bbox_max": [round(float(x), 6) for x in mx],
+                "bbox_extent": [round(float(x), 6) for x in (mx - mn)]}
+    p = v[f]                                     # (M,3,3)
+    e1 = p[:, 1] - p[:, 0]
+    e2 = p[:, 2] - p[:, 0]
+    cr = np.cross(e1, e2)                        # (M,3)
+    area = float(0.5 * np.linalg.norm(cr, axis=1).sum())
+    # 有向体积 = Σ det[v0,v1,v2] / 6 = Σ v0·(v1×v2) / 6
+    vol = float(np.einsum("ij,ij->i", p[:, 0], np.cross(p[:, 1], p[:, 2])).sum() / 6.0)
+    mn = v.min(axis=0)
+    mx = v.max(axis=0)
+    return {"area": round(area, 6),
+            "volume_signed": round(vol, 6),
+            "volume_abs": round(abs(vol), 6),
+            "bbox_min": [round(float(x), 6) for x in mn],
+            "bbox_max": [round(float(x), 6) for x in mx],
+            "bbox_extent": [round(float(x), 6) for x in (mx - mn)]}
+
+
 def weld_mesh_vertices(vertices, faces, colors=None, *, tol: float):
     """跨视图缝合首步：重复/重合顶点焊接（纯 numpy，体素量化归并）。
 
