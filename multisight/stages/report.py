@@ -10,6 +10,10 @@ import json
 from ..pipeline import Stage, StageContext
 from ..workspace import STAGES
 
+# 下游质量阈：低于此值提示重建可能稀疏/有洞（仅对真实 stats 生效，合成小场景不适用）
+MVS_MIN_DENSE = 200
+MESH_MIN_FACES = 100
+
 
 def _read_json(path):
     return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else None
@@ -23,6 +27,9 @@ class Mock(Stage):
         manifest = ctx.ws.manifest
         prep = _read_json(root / "images" / "list.json") or {}
         sfm_stats = _read_json(root / "sfm" / "stats.json") or {}
+        mvs_stats = _read_json(root / "mvs" / "stats.json") or {}
+        mesh_stats = _read_json(root / "mesh" / "stats.json") or {}
+        tex_stats = _read_json(root / "texture" / "stats.json") or {}
 
         warnings = list(prep.get("warnings") or [])
         advice = []
@@ -31,6 +38,11 @@ class Mock(Stage):
             advice.append(f"阶段 {failed[0]} 失败：修复输入后可用 --resume 从断点续跑，已完成产物未清空")
         if sfm_stats and sfm_stats.get("register_rate", 1) < 0.85:
             warnings.append(f"照片注册率 {sfm_stats['register_rate']:.0%} < 85%，检查重叠度与模糊照片")
+        # 下游质量阈值警告（仅当对应阶段有真实 stats 产物时触发；mock 不写 stats 故为空 dict，不误报）
+        if mvs_stats and mvs_stats.get("dense_points", 0) < MVS_MIN_DENSE:
+            warnings.append(f"稠密点云仅 {mvs_stats.get('dense_points', 0)} 点（<{MVS_MIN_DENSE}），重建可能稀疏/有洞；增加照片或改善纹理/重叠")
+        if mesh_stats and mesh_stats.get("faces", 0) < MESH_MIN_FACES:
+            warnings.append(f"网格面数仅 {mesh_stats.get('faces', 0)}（<{MESH_MIN_FACES}），覆盖/置信不足；检查深度图质与视图数")
 
         report = {
             "task_id": ctx.ws.task_id,
@@ -42,6 +54,9 @@ class Mock(Stage):
                 for s in STAGES
             },
             "sfm": sfm_stats,
+            "mvs": mvs_stats,
+            "mesh": mesh_stats,
+            "texture": tex_stats,
             "artifacts": ctx.ws.list_artifacts(),
             "warnings": warnings,
             "advice": advice,
