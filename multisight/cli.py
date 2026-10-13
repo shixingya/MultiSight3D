@@ -51,7 +51,9 @@ def _print_report_digest(ws: Workspace) -> bool:
     r = json.loads(path.read_text(encoding="utf-8"))
     line = _fmt_stats_line(r.get("sfm", {}) or {}, r.get("mvs", {}) or {},
                            r.get("mesh", {}) or {}, r.get("texture", {}) or {})
-    print("\n📊 质量摘要" + (f"：{line}" if line else ""))
+    dur = r.get("pipeline_duration_s")
+    segs = [s for s in (line, (f"耗时 {dur:.1f}s" if dur else "")) if s]
+    print("\n📊 质量摘要" + ("：" + "  |  ".join(segs) if segs else ""))
     for w in r.get("warnings", []) or []:
         print(f"  ⚠ {w}")
     for a in r.get("advice", []) or []:

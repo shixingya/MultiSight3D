@@ -50,7 +50,7 @@ sfm/     cameras.txt images.txt points3D.ply [+stats.json]  # COLMAP 兼容目�
 mvs/     fusion.ply                    # ← mvs
 mesh/    mesh.obj                      # ← mesh
 texture/ texture.png model.glb         # ← texture（GLB 单文件直出）
-report/  report.json                   # ← report（聚合指标 + 警告 + 补救建议）
+report/  report.json                   # ← report（聚合指标 + 逐阶段/管线耗时 + 警告 + 补救建议）
 ```
 
 - `--from-stage X`：先校验 X 之前所有阶段 `artifact_ready`，缺件拒跑。
@@ -78,7 +78,8 @@ stage.run ──progress()──▶ Bus.publish ──▶ CLI 控制台渲染线
 | `GET /api/health` | `{status, engine}` |
 | `POST /api/tasks` | multipart `photos`（≤500 张、单张 ≤20MB）+ `preset`，后台线程起管线 |
 | `GET /api/tasks` | manifest 扫描聚合的任务列表（重启可恢复） |
-| `GET /api/tasks/{id}` | 摘要 + `artifacts` + `live` |
+| `GET /api/tasks/{id}` | 摘要 + `artifacts` + `quality`（warnings+advice，无报告时 null） + `live` |
+| `GET /api/tasks/{id}/report` | 完整 `report.json`（未就绪 404 `report_not_ready`） |
 | `GET /api/tasks/{id}/events` | **SSE** 实时/回放进度 |
 | `GET /api/tasks/{id}/file?path=` | 产物下载（`safe_relpath`：限定工作区内 + 后缀白名单；manifest.json 不对外） |
 | `GET /api/assets` | 资源模型库列表（扫 `<assets_dir>/*/asset.json` 摘要：folder/name/display/sprite_count） |

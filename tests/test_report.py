@@ -125,3 +125,36 @@ def test_healthy_inputs_no_retake_advice(tmp_path):
     ReportStage().run(_ctx(ws))
     report = json.loads((ws.root / "report" / "report.json").read_text(encoding="utf-8"))
     assert report["advice"] == []
+
+
+def test_stage_duration_helper():
+    from multisight.stages.report import _parse_ts, _stage_duration
+    assert _parse_ts("2026-10-13T10:00:00") is not None
+    assert _parse_ts(None) is None and _parse_ts("garbage") is None
+    assert _stage_duration({"started_at": "2026-10-13T10:00:00",
+                            "finished_at": "2026-10-13T10:00:07"}) == 7.0
+    assert _stage_duration({"started_at": "2026-10-13T10:00:00"}) is None      # 缺 finished
+    assert _stage_duration({"started_at": "2026-10-13T10:00:10",
+                            "finished_at": "2026-10-13T10:00:00"}) is None     # 结束早于开始→不编造负值
+
+
+def test_report_includes_durations(tmp_path):
+    ws = _ws(tmp_path)
+    manifest = ws.manifest
+    manifest["stages"]["sfm"].update({"status": "done", "started_at": "2026-10-13T10:00:00",
+                                      "finished_at": "2026-10-13T10:00:12"})
+    manifest["stages"]["mesh"].update({"status": "done", "started_at": "2026-10-13T10:00:12",
+                                       "finished_at": "2026-10-13T10:00:20"})
+    ws._write_manifest(manifest)
+    report = _run(ws)
+    assert report["stages"]["sfm"]["duration_s"] == 12.0
+    assert report["stages"]["mesh"]["duration_s"] == 8.0
+    assert report["stages"]["preprocess"]["duration_s"] is None   # 未跑无时间戳
+    assert "started_at" not in report["stages"]["sfm"]             # 原始时间戳不外泄
+    assert report["pipeline_duration_s"] == 20.0                   # 12 + 8
+
+
+def test_report_no_durations_all_none(tmp_path):
+    report = _run(_ws(tmp_path))   # 全新工作区无任何时间戳
+    assert report["pipeline_duration_s"] is None
+    assert all(report["stages"][s]["duration_s"] is None for s in report["stages"])

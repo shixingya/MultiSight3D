@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 
 from ..pipeline import Stage, StageContext
 from ..workspace import STAGES
@@ -19,6 +20,29 @@ REPROJ_MAX_PX = 1.5          # 稀疏重投影误差超此像素值提示几何�
 
 def _read_json(path):
     return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else None
+
+
+_TS_FMT = "%Y-%m-%dT%H:%M:%S"
+
+
+def _parse_ts(s):
+    """解析 manifest 秒级 ISO 时间戳；缺失/异常返回 None（不因脏时间戳打断报告）。"""
+    if not s:
+        return None
+    try:
+        return datetime.strptime(s, _TS_FMT)
+    except (ValueError, TypeError):
+        return None
+
+
+def _stage_duration(info):
+    """单阶段耗时（秒，保留 1 位小数）；时间戳不全或结束早于开始返回 None（诚实缺省，不编造）。"""
+    start = _parse_ts(info.get("started_at"))
+    end = _parse_ts(info.get("finished_at"))
+    if start is None or end is None:
+        return None
+    delta = (end - start).total_seconds()
+    return round(delta, 1) if delta >= 0 else None
 
 
 def _retake_advice(prep, sfm_stats, mvs_stats):
@@ -77,15 +101,26 @@ class Mock(Stage):
 
         advice.extend(_retake_advice(prep, sfm_stats, mvs_stats))
 
+        stages_out = {}
+        stage_durations = {}
+        for s in STAGES:
+            info = manifest["stages"][s]
+            dur = _stage_duration(info)
+            if dur is not None:
+                stage_durations[s] = dur
+            stages_out[s] = {k: v for k, v in info.items()
+                             if k not in ("started_at", "finished_at")}
+            stages_out[s]["duration_s"] = dur
+        # 管线总耗时 = 各阶段耗时之和（不含阶段间空闲/排队，反映实际计算量）
+        pipeline_duration_s = round(sum(stage_durations.values()), 1) if stage_durations else None
+
         report = {
             "task_id": ctx.ws.task_id,
             "engine": ctx.engine,
             "params": ctx.params,
             "photo_count": prep.get("count", 0),
-            "stages": {
-                s: {k: v for k, v in manifest["stages"][s].items() if k != "started_at"}
-                for s in STAGES
-            },
+            "pipeline_duration_s": pipeline_duration_s,
+            "stages": stages_out,
             "sfm": sfm_stats,
             "mvs": mvs_stats,
             "mesh": mesh_stats,
