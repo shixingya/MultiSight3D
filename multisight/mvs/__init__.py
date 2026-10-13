@@ -13,6 +13,6 @@ PRD §11-2 决策「学习型深度网络首发 + PatchMatch 兜底」的落地�
 from __future__ import annotations
 
 from .depth import plane_sweep_depth
-from .fuse import depth_map_to_points
+from .fuse import depth_map_to_points, remove_scatter_noise
 
-__all__ = ["plane_sweep_depth", "depth_map_to_points"]
+__all__ = ["plane_sweep_depth", "depth_map_to_points", "remove_scatter_noise"]

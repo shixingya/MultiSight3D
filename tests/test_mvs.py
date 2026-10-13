@@ -10,7 +10,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from multisight.mvs import plane_sweep_depth, depth_map_to_points
+from multisight.mvs import plane_sweep_depth, depth_map_to_points, remove_scatter_noise
 
 
 def _K(W=80, H=64, focal=120.0):
@@ -124,3 +124,18 @@ def test_out_of_range_depth_rejected_at_boundary():
         reject_boundaries=False)
     assert abs(int(np.isfinite(dm_rej).sum()) - int(np.isfinite(dm_keep).sum())) <= 5
     assert np.median(np.abs(dm_rej[np.isfinite(dm_rej)] - d0)) <= 0.2
+
+
+def test_remove_scatter_noise_keeps_cluster_drops_isolated():
+    rng = np.random.default_rng(0)
+    cluster = rng.random((120, 3)) * 0.4               # 紧密表面簇（邻域充分）
+    outliers = np.array([[8.0, 8.0, 8.0], [-9.0, 3.0, 1.5], [4.0, -7.0, 9.0]])
+    P = np.vstack([cluster, outliers])
+    C = np.arange(len(P), dtype=np.uint8).reshape(-1, 1) % 200
+    kept, kept_c = remove_scatter_noise(P, voxel=0.1, min_neighbors=4, colors=C)
+    assert len(kept) == len(cluster)                    # 簇全保留，孤立点全剔除
+    assert not any(np.allclose(kept, o) for o in outliers)
+    assert len(kept_c) == len(kept)                     # 颜色随行对齐
+    # 无邻阈值时全量保留（诚实 no-op）
+    k2, _ = remove_scatter_noise(P, voxel=0.1, min_neighbors=1)
+    assert len(k2) == len(P)

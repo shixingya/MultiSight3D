@@ -45,3 +45,35 @@ def depth_map_to_points(us, vs, depth, K: np.ndarray, RT, *,
     X[:, 2] = d                                       # 参考相机系坐标 Xc
     W = (X - t) @ R                                   # W = Rᵀ(Xc - t)
     return W[valid], valid
+
+
+_OFFS3 = np.array([(i, j, k)
+                   for i in (-1, 0, 1) for j in (-1, 0, 1) for k in (-1, 0, 1)],
+                  dtype=np.int64)
+
+
+def remove_scatter_noise(points, *, voxel: float, min_neighbors: int = 4, colors=None):
+    """统计散噪声剔除：以边长 voxel 的体素格统计每点 3×3×3 邻域内的点数，邻域点数
+    < min_neighbors 的孤立点（飘渺噪声/重影）丢弃。纯 numpy（体素字典计数，无需 KDTree）。
+
+    points (N,3)；colors (N,k) 可选，随行过滤。返回 (kept_points, kept_colors 或 None)。
+    诚实原则：voxel<=0 或 min_neighbors<=1 时不剔除（全量保留）。"""
+    P = np.asarray(points, dtype=np.float64)
+    n = P.shape[0]
+    if n == 0:
+        empty = np.zeros((0, 3))
+        return empty, (None if colors is None else np.asarray(colors)[0:0])
+    if voxel <= 0 or min_neighbors <= 1:
+        return P, (None if colors is None else np.asarray(colors))
+    key = np.floor(P / voxel).astype(np.int64)
+    uk, inv, cnt = np.unique(key, axis=0, return_inverse=True, return_counts=True)
+    cd = {tuple(int(c) for c in cc): int(k) for cc, k in zip(uk, cnt)}
+    occ = np.zeros(len(uk), dtype=np.int64)
+    for ci, cc in enumerate(uk):
+        s = 0
+        for o in _OFFS3:
+            s += cd.get((int(cc[0]) + o[0], int(cc[1]) + o[1], int(cc[2]) + o[2]), 0)
+        occ[ci] = s
+    keep = occ[inv] >= min_neighbors
+    out_c = None if colors is None else np.asarray(colors)[keep]
+    return P[keep], out_c

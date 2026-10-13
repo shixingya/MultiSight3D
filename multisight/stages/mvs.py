@@ -15,7 +15,7 @@ import json
 import numpy as np
 
 from ..pipeline import Stage, StageContext
-from ..mvs import plane_sweep_depth, depth_map_to_points
+from ..mvs import plane_sweep_depth, depth_map_to_points, remove_scatter_noise
 from ..mvs.colmap_io import read_images, read_ply_xyz, read_shared_K
 from ._synth import sphere_points, write_ply_ascii
 
@@ -56,6 +56,8 @@ class Real(Stage):
     MAX_COST = 0.5     # 有效像素的最大平均 NCC 代价
     MIN_CONF = 2       # 至少被这么多邻视图一致看到才收点
     VOXEL_REL = 0.6    # 体素去重边长 = 深度采样步长 × 该系数
+    MIN_NEIGHBORS = 3  # 散噪声剔除：3×3×3 邻域体素内至少这么多个点才保留
+    DENOISE_MIN_PTS = 24  # 融合点过稀疏时跳过统计降噪（避免小场景被误清空）
 
     def run(self, ctx: StageContext) -> None:
         from ..sfm.features import to_gray
@@ -135,6 +137,13 @@ class Real(Stage):
         P = np.vstack(all_pts)
         C = np.vstack(all_col).astype(np.uint8)
         voxel = float(np.median(steps)) * self.VOXEL_REL if steps else 0.0
+        raw_n = len(P)
+        denoised = 0
+        if raw_n >= self.DENOISE_MIN_PTS:               # 稀疏云跳过，避免跨视图重复不足时误清真实表面
+            Pf, Cf = remove_scatter_noise(P, voxel=voxel, min_neighbors=self.MIN_NEIGHBORS, colors=C)
+            if len(Pf) > 0:                             # 若几乎全清（过严）则保留原云，不破坏产物
+                P, C = Pf, Cf
+                denoised = raw_n - len(P)
         P, C = self._voxel_dedup(P, C, step=voxel)
         write_ply_ascii(ctx.ws.file("mvs", "fusion.ply"), P, C)
 
@@ -147,6 +156,8 @@ class Real(Stage):
                             round(float(max(b[1] for b in bounds_all)), 4)] if bounds_all else [0.0, 0.0],
             "num_depths": self.NDEPTH,
             "dense_points": int(len(P)),
+            "raw_fused_points": int(raw_n),
+            "noise_removed": int(denoised),
             "sparse_points": int(len(sparse)),
             "note": "v0.2 传统 MVS 基线（平面扫描 NCC + 逐视图鲁棒定标 + 跨视图置信融合 + 参考视图真彩色采样）；学习型/PatchMatch 高档待落地",
         }, ensure_ascii=False, indent=2), encoding="utf-8")
