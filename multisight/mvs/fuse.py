@@ -77,3 +77,33 @@ def remove_scatter_noise(points, *, voxel: float, min_neighbors: int = 4, colors
     keep = occ[inv] >= min_neighbors
     out_c = None if colors is None else np.asarray(colors)[keep]
     return P[keep], out_c
+
+
+def voxel_downsample(points, *, voxel: float, colors=None):
+    """体素网格降采样：落入同一边长 voxel 体素的点归并为一个代表点（体素质心），
+    颜色（如有）取体素内均值。纯 numpy（np.unique 分组）。用于控制稠密点云/导出体积。
+
+    points (N,3)；colors (N,k) 可选，同步归并。返回 (points_out (M,3), colors_out 或 None)。
+    诚实原则：voxel<=0 或空点云时原样返回（不强行归并）；M<=N 恒成立（只降不升）。"""
+    P = np.asarray(points, dtype=np.float64)
+    n = P.shape[0]
+    if n == 0:
+        return np.zeros((0, 3)), (None if colors is None else np.asarray(colors)[0:0])
+    if voxel <= 0:
+        return P, (None if colors is None else np.asarray(colors))
+    key = np.floor(P / voxel).astype(np.int64)
+    _, inv, cnt = np.unique(key, axis=0, return_inverse=True, return_counts=True)
+    m = cnt.shape[0]
+    out = np.zeros((m, 3), dtype=np.float64)
+    np.add.at(out, inv, P)
+    out /= cnt[:, None]
+    if colors is None:
+        return out, None
+    C = np.asarray(colors)
+    k = C.shape[1] if C.ndim == 2 else 1
+    cd = np.zeros((m, k), dtype=np.float64)
+    np.add.at(cd, inv, C.astype(np.float64))
+    cd /= cnt[:, None]
+    if C.dtype == np.uint8:
+        cd = np.round(cd).astype(np.uint8)
+    return out, cd
