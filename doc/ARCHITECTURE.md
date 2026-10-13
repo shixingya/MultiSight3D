@@ -171,13 +171,20 @@ Butian3D 前端资产：ReconScene 资产加载位、SSE token 方案）。
   完成后自动跑一轮全局 BA（`_bundle_refine`：由轨迹+角点像素构造 2D-3D 观测、以初始帧为锚固定 gauge、就地写回位姿/结构，
   失败则仅报质量指标不降级注册）；`ReconstructionResult` 新增 `bundle_applied`/`mean_reproj_px`，`stages/sfm.Real` 的
   `stats.json` 露出两者。增量结构增长（新点三角化 + 已知点补观测）已落地（见上）；稠密化 `stages/mvs.Real` 为下一里程碑（仍为 `NotImplementedReal`）。
+- **自研 MVS 深度基元（`multisight/mvs/`，v0.2 起步）**：继 SfM 之后的稠密化第一件，纯 numpy、零重型依赖、CPU 可跑（传统
+  多视图立体基元，作为 PRD §11-2 学习型/PatchMatch 高档的兜底基线与对照）。`depth.plane_sweep_depth`：对参考视图子采样像素
+  沿视线在深度区间平面扫描，将候选 3D 点投到各邻视图、以去均值 L2 归一化互相关（NCC）度量 patch 一致性，跨邻视图平均代价取
+  argmin 深度（相机约定与世界→相机 x=K(RW+t) 一致）；无邻可见/负深度/代价超阈的像素诚实标无效（depth=nan），不臆造深度。
+  `fuse.depth_map_to_points`：把深度图反投影回世界点云并按置信度/代价过滤（低置信丢弃）。均经合成平面场景单测（已知深度
+  恢复到 ~4% 相对精度、反投影点 z 贴近真值、无纹理诚实降级）。多视图逐参考扫一遍再融合去重接 `stages/mvs.Real`、亚像素代价
+  抛物线精化与显存/耗时分档为后续迭代。
 
 ## 8. 与 PRD 里程碑映射
 
 | 里程碑 | 交付 | 代码钩子（现已就位） |
 | --- | --- | --- |
 | v0.1 | 骨架 + 自研 SfM（特征/匹配/增量注册/结构增长/BA） | `sfm/`（纯 numpy 全链已落地，含逐帧结构增长）；`stages/sfm.Real` 替换点；`_synth` 的 COLMAP 目录即目标落盘格式 |
-| v0.2 | 学习型 MVS + PatchMatch 兜底 | `stages/mvs.Real`；设备探测（CUDA/MPS/CPU）选档在 pipeline.params 扩展 |
+| v0.2 | 学习型 MVS + PatchMatch 兜底 | `mvs/`（纯 numpy 平面扫描深度图 + 反投影融合已落地并单测）；`stages/mvs.Real` 接线（逐视图扫描→融合去重）与设备探测为下一步 |
 | v0.3 | 网格 + 纹理烘焙 | `mesh.Real` / `texture.Real`；`_synth.write_glb_*` 替换为真实烘焙产物 |
 | v0.4 | 报告/归因/补拍建议/账号隔离 | `report` 已聚合指标与警告；FR-16 加 `server/routes` 鉴权层 |
 | v1.0 | 打磨发布 + Docker | `Dockerfile` 待补；CI 双 OS 矩阵已就位 |
