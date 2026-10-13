@@ -89,4 +89,28 @@ def test_sse_replay_for_finished_task(client):
     assert r.status_code == 200
     body = r.text
     assert '"type": "progress"' in body and '"type": "end"' in body and '"ok": true' in body
-    assert '"type": "stage_done"' in body  # 回放补发终止态，与实时链路视觉一致
+    assert '"type": "stage_done"' in body   # 回放补发终止态，与实时链路视觉一致
+
+
+def test_task_detail_has_quality(client):
+    c, photos_dir = client
+    task_id = c.post("/api/tasks", data={"preset": "fast"},
+                     files=_photo_files(photos_dir)).json()["task_id"]
+    detail = wait_done(c, task_id)
+    q = detail["quality"]
+    assert q is not None and "warnings" in q and "advice" in q
+    # 照片不足（<15）→ report 应给出补拍建议
+    assert any("环形" in a or "补" in a for a in q["advice"])
+
+
+def test_report_endpoint(client):
+    c, photos_dir = client
+    task_id = c.post("/api/tasks", data={"preset": "fast"},
+                     files=_photo_files(photos_dir)).json()["task_id"]
+    wait_done(c, task_id)
+    r = c.get(f"/api/tasks/{task_id}/report")
+    assert r.status_code == 200
+    rep = r.json()
+    assert set(["warnings", "advice", "stages"]) <= set(rep)
+    # 未知任务 → 404
+    assert c.get("/api/tasks/nope/report").status_code == 404

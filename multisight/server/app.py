@@ -44,6 +44,17 @@ def _sse(event: dict) -> str:
     return f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
 
 
+def _read_report(ws) -> dict | None:
+    """读工作区的 report.json（不存在/损坏返回 None）。供任务详情与报告接口消费。"""
+    path = ws.root / "report" / "report.json"
+    if not path.is_file():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
 def create_app() -> FastAPI:
     app = FastAPI(title="MultiSight3D", version="0.1.0")
     tm = TaskManager(_data_dir)
@@ -85,9 +96,22 @@ def create_app() -> FastAPI:
         if ws is None:
             raise HTTPException(404, "task_not_found")
         manifest = ws.manifest
+        rep = _read_report(ws)
+        quality = {"warnings": rep.get("warnings", []), "advice": rep.get("advice", [])} if rep else None
         return {**summarize(manifest),
                 "artifacts": ws.list_artifacts(),
+                "quality": quality,
                 "live": tm.live(task_id) is not None}
+
+    @app.get("/api/tasks/{task_id}/report")
+    def task_report(task_id: str):
+        ws = tm.workspace(task_id)
+        if ws is None:
+            raise HTTPException(404, "task_not_found")
+        rep = _read_report(ws)
+        if rep is None:
+            raise HTTPException(404, "report_not_ready")
+        return rep
 
     # ---------- SSE 实时进度 ----------
 
