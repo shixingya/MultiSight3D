@@ -177,9 +177,11 @@ Butian3D 前端资产：ReconScene 资产加载位、SSE token 方案）。
   argmin 深度（相机约定与世界→相机 x=K(RW+t) 一致）；无邻可见/负深度/代价超阈的像素诚实标无效（depth=nan），不臆造深度。
   `fuse.depth_map_to_points`：把深度图反投影回世界点云并按置信度/代价过滤（低置信丢弃）。均经合成平面场景单测（已知深度
   恢复到 ~4% 相对精度、反投影点 z 贴近真值、无纹理诚实降级）。**已接线 `stages/mvs.Real`**：`colmap_io` 读上游 SfM 的
-  cameras.txt/images.txt/points3D.ply（新增 `quat_to_matrix` 与 `matrix_to_quat` 互逆），由稀疏点定标全局深度区间，逐参考视图取基线
-  最近的邻视图跑平面扫描→反投影→按 MIN_CONF/MAX_COST 过滤→体素去重→稠密 fusion.ply + `stats.json`（视图不足/无稀疏点/零稠密点均诚实报错）。
-  深度图含**亚像素抛物线代价精化**（对最优深度网格点及左右代价拟合连续偏移，合成平面测试确认产出非网格连续值）。
+  cameras.txt/images.txt/points3D.ply（新增 `quat_to_matrix` 与 `matrix_to_quat` 互逆），**逐参考视图**用稀疏点投影到本视图的正深度**鲁棒定标深度区间**
+  （先 median±k·MAD 剔除 SfM 稀疏点里射影退化的千万级远点，再取存活 2%~98% 分位并保证最小宽度——避免极端远点把 percentile 撑爆、使有限采样数沦为
+  零分辨率），逐视图取基线最近的邻视图跑平面扫描→反投影→按 MIN_CONF/MAX_COST 过滤→体素去重→稠密 fusion.ply + `stats.json`（视图不足/无稀疏点/零稠密点均诚实报错）。
+  深度图含**亚像素抛物线代价精化**（对最优深度网格点及左右代价拟合连续偏移，合成平面测试确认产出非网格连续值）与**边界剔除**（`reject_boundaries`：最优
+  深度落在扫描区间首/末采样点判无效——真实表面越出区间则边界深度不可靠，默认开启，合成越界测试确认剔除绝大多数伪深度而不伤及区间内精度）。
   显存/耗时分档与学习型/PatchMatch 高档为后续迭代。
 
 ## 8. 与 PRD 里程碑映射

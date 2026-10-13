@@ -67,7 +67,7 @@ def _normalize_rows(p: np.ndarray) -> np.ndarray:
 
 def plane_sweep_depth(ref_gray, src_grays, K: np.ndarray, ref_RT, src_RTs,
                       depths, *, patch: int = 3, stride: int = 4,
-                      max_cost: float = 0.5):
+                      max_cost: float = 0.5, reject_boundaries: bool = True):
     """参考视图平面扫描深度图。
 
     参数
@@ -80,6 +80,8 @@ def plane_sweep_depth(ref_gray, src_grays, K: np.ndarray, ref_RT, src_RTs,
     depths   : (D,) 递增候选深度（相机系 z，单位与位姿平移一致）。
     patch    : patch 半径 r（窗口 (2r+1)²）。stride：像素子采样间隔。
     max_cost : 有效像素的最大平均 NCC 代价（1-NCC），超过判无效。
+    reject_boundaries : 最优深度落在扫描区间首/末采样点时判无效（真实表面可能超出区间，
+    边界深度不可靠；关闭则保留）。
 
     返回 depth, cost, conf, grid —— depth/cost/conf 均为参考视图子采样网格 (Hs, Ws) 上的数组
     （depth 最优深度、无效为 nan；cost 最优平均代价；conf 邻视图平均可见数）；
@@ -165,6 +167,8 @@ def plane_sweep_depth(ref_gray, src_grays, K: np.ndarray, ref_RT, src_RTs,
         best_depth = best_depth + offset * step
 
     valid = (best_cost < max_cost) & (best_conf >= 1) & np.isfinite(best_depth)
+    if reject_boundaries and D >= 3:
+        valid &= (best_i > 0) & (best_i < D - 1)       # 边界深度不可靠（表面可能超出扫描区间）
     depth_out = np.where(valid, best_depth, np.nan).reshape(shape)
     cost_out = np.where(valid, best_cost, np.inf).reshape(shape)
     conf_out = best_conf.reshape(shape)

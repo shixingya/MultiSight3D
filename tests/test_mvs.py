@@ -98,3 +98,29 @@ def test_plane_sweep_requires_source_view():
     K, ref, _srcs, _pose, ref_rt, _X, d0 = _plane_scene()
     with pytest.raises(ValueError):
         plane_sweep_depth(ref, [], K, ref_rt, [], np.array([d0]))
+
+
+def test_out_of_range_depth_rejected_at_boundary():
+    K, ref, srcs, src_pose, ref_rt, _X, d0 = _plane_scene()
+    far = np.linspace(d0 + 1.0, d0 + 1.5, 12)          # 区间完全不包含真值
+    # 真值在区间之外：最优深度绝大多数贴向边界，开启剔除后有效像素应大幅下降
+    dmap_rej, _c, _cf, _g = plane_sweep_depth(
+        ref, srcs, K, ref_rt, src_pose, far, patch=2, stride=3, max_cost=2.0,
+        reject_boundaries=True)
+    dmap_keep, _c, _cf, _g = plane_sweep_depth(
+        ref, srcs, K, ref_rt, src_pose, far, patch=2, stride=3, max_cost=2.0,
+        reject_boundaries=False)
+    n_rej = int(np.isfinite(dmap_rej).sum())
+    n_keep = int(np.isfinite(dmap_keep).sum())
+    assert n_keep > 0                                    # 关闭剔除时仍保留（但深度不可靠）
+    assert n_rej < 0.25 * n_keep                         # 边界剔除掉绝大多数越界伪深度
+    # 对照：区间包含真值时，边界剔除几乎不影响有效像素与精度
+    near = np.linspace(d0 - 0.5, d0 + 0.5, 41)
+    dm_rej, _c, _cf, _g = plane_sweep_depth(
+        ref, srcs, K, ref_rt, src_pose, near, patch=2, stride=3, max_cost=0.6,
+        reject_boundaries=True)
+    dm_keep, _c, _cf, _g = plane_sweep_depth(
+        ref, srcs, K, ref_rt, src_pose, near, patch=2, stride=3, max_cost=0.6,
+        reject_boundaries=False)
+    assert abs(int(np.isfinite(dm_rej).sum()) - int(np.isfinite(dm_keep).sum())) <= 5
+    assert np.median(np.abs(dm_rej[np.isfinite(dm_rej)] - d0)) <= 0.2

@@ -71,8 +71,6 @@ class Real(Stage):
         if len(sparse) < 6:
             raise ValueError("稀疏点过少，无法可靠定标深度区间；请改善 SfM（更多重叠照片）")
 
-        dmin, dmax = self._depth_bounds(K, poses, sparse)
-        depths = np.linspace(dmin, dmax, self.NDEPTH)
         centers = np.array([-R.T @ t for _n, R, t in poses])   # 相机中心（世界系）
 
         refs = poses[:self.MAX_VIEWS]
@@ -80,7 +78,18 @@ class Real(Stage):
                      f"真实 MVS：{len(refs)} 参考视图 × {self.NDEPTH} 深度平面扫描")
         all_pts: list[np.ndarray] = []
         all_col: list[np.ndarray] = []
+        steps: list[float] = []
+        bounds_all: list[tuple[float, float]] = []
         for vi, (name, Rv, tv) in enumerate(refs):
+            # 逐视图鲁棒定标深度区间（稀疏点投影到本视图的正深度）：不同视图到表面的
+            # 距离不同，各自取区间才能用有限采样数获得足够深度分辨率。
+            z_view = (sparse @ Rv.T + tv)[:, 2]
+            dmin, dmax = self._robust_bounds(z_view)
+            if dmin is None:
+                continue
+            depths = np.linspace(dmin, dmax, self.NDEPTH)
+            steps.append((dmax - dmin) / max(self.NDEPTH - 1, 1))
+            bounds_all.append((dmin, dmax))
             # 取基线最近的若干邻视图（排除自身）
             order = np.argsort([np.linalg.norm(centers[k] - centers[vi])
                                 for k in range(len(poses))])
@@ -118,7 +127,8 @@ class Real(Stage):
             raise ValueError("MVS 未产生任何稠密点（照片纹理/重叠不足或位姿不可靠）；不臆造点云")
         P = np.vstack(all_pts)
         C = np.vstack(all_col).astype(np.uint8)
-        P, C = self._voxel_dedup(P, C, step=(dmax - dmin) / max(self.NDEPTH - 1, 1) * self.VOXEL_REL)
+        voxel = float(np.median(steps)) * self.VOXEL_REL if steps else 0.0
+        P, C = self._voxel_dedup(P, C, step=voxel)
         write_ply_ascii(ctx.ws.file("mvs", "fusion.ply"), P, C)
 
         ctx.progress(self.name, 100, f"稠密点云完成：{len(P)} 点")
@@ -126,7 +136,8 @@ class Real(Stage):
             "engine": "real/planesweep",
             "reference_views": len(refs),
             "total_views": len(poses),
-            "depth_range": [round(float(dmin), 4), round(float(dmax), 4)],
+            "depth_range": [round(float(min(b[0] for b in bounds_all)), 4),
+                            round(float(max(b[1] for b in bounds_all)), 4)] if bounds_all else [0.0, 0.0],
             "num_depths": self.NDEPTH,
             "dense_points": int(len(P)),
             "sparse_points": int(len(sparse)),
@@ -134,16 +145,29 @@ class Real(Stage):
         }, ensure_ascii=False, indent=2), encoding="utf-8")
 
     @staticmethod
-    def _depth_bounds(K, poses, sparse) -> tuple[float, float]:
-        """把稀疏点投到各相机，取正深度 2%~98% 分位为全局深度区间（留 5% 边距）。"""
-        zs = []
-        for _name, R, t in poses:
-            Xc = sparse @ R.T + t
-            z = Xc[:, 2]
-            zs.append(z[z > 1e-6])
-        zs = np.concatenate([a for a in zs if a.size]) if any(a.size for a in zs) else np.array([1.0])
-        lo, hi = np.percentile(zs, 2), np.percentile(zs, 98)
-        span = max(hi - lo, 1e-3)
+    def _robust_bounds(z) -> tuple:
+        """从一维正深度鲁棒定标扫描区间：先用 median±k·MAD 剔除极端远点/退化值（SfM
+        稀疏点常含射影退化的千万级远点，会把 percentile 直接撑爆），再取存活点 2%~98%
+        分位并保证最小宽度。无有效正值时返回 (None, None)。"""
+        z = np.asarray(z, dtype=np.float64).ravel()
+        z = z[np.isfinite(z) & (z > 1e-6)]
+        if z.size == 0:
+            return None, None
+        med = float(np.median(z))
+        if z.size < 6:
+            return max(1e-3, med * 0.5), med * 2.0
+        sigma = 1.4826 * float(np.median(np.abs(z - med)))
+        if sigma <= 1e-6:
+            sigma = max(float(np.percentile(z, 95) - np.percentile(z, 5)), 1e-3) / 3.92
+        keep = z[(z > med - 8.0 * sigma) & (z < med + 8.0 * sigma)]
+        if keep.size < 6:
+            keep = z
+        lo, hi = np.percentile(keep, 2), np.percentile(keep, 98)
+        span = hi - lo
+        min_span = max(med * 0.3, 4.0 * sigma)
+        if span < min_span:                            # 主导表面过于集中时适当撑开，避免区间贴死
+            c = 0.5 * (lo + hi)
+            lo, hi = c - min_span / 2, c + min_span / 2
         return float(max(1e-3, lo - 0.05 * span)), float(hi + 0.05 * span)
 
     @staticmethod
