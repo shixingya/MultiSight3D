@@ -44,13 +44,17 @@ def test_real_mvs_produces_dense_cloud(tmp_path):
     assert stats["dense_points"] > 0
     assert stats["reference_views"] >= 2
 
-    # fusion.ply 头部与点数据一致、坐标有限
+    # fusion.ply 头部与点数据一致、坐标有限；带真彩色 rgb 列
     lines = (ws.root / "mvs" / "fusion.ply").read_text(encoding="ascii").splitlines()
+    assert any(ln.startswith("property uchar red") for ln in lines)   # 稠密点云带颜色
     nvert = int(next(ln.split()[-1] for ln in lines if ln.startswith("element vertex")))
     assert nvert == stats["dense_points"]
     body = [ln.split() for ln in lines[lines.index("end_header") + 1:] if ln.strip()]
+    assert all(len(row) == 6 for row in body)                        # xyz + rgb
     arr = np.array([[float(v) for v in row[:3]] for row in body])
     assert np.isfinite(arr).all() and len(arr) == nvert
+    cols = np.array([[int(v) for v in row[3:6]] for row in body])
+    assert cols.min() >= 0 and cols.max() <= 255
 
 
 def test_real_mvs_requires_sfm_products(tmp_path):

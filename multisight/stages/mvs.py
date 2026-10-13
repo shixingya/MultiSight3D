@@ -44,7 +44,7 @@ class Mock(Stage):
 
 
 class Real(Stage):
-    """自研传统 MVS：读 SfM 位姿→逐视图平面扫描深度图→反投影融合去重→稠密 fusion.ply。"""
+    """自研传统 MVS：读 SfM 位姿→逐视图平面扫描深度图→反投影融合去重→稠密真彩色 fusion.ply。"""
 
     name = "mvs"
 
@@ -59,6 +59,13 @@ class Real(Stage):
 
     def run(self, ctx: StageContext) -> None:
         from ..sfm.features import to_gray
+        from ..sfm.features import load_image
+
+        def _load_rgb(path):
+            im = load_image(path)
+            if im is None:
+                raise ValueError(f"无法读取图像：{path}")
+            return np.asarray(im.convert("RGB"), dtype=np.uint8)   # (H,W,3)
 
         sfm = ctx.ws.root / "sfm"
         if not (sfm / "cameras.txt").is_file() or not (sfm / "images.txt").is_file():
@@ -95,9 +102,10 @@ class Real(Stage):
                                 for k in range(len(poses))])
             nb_idx = [k for k in order if k != vi][:self.MAX_NB]
             try:
-                ref_gray = to_gray(ctx.ws.root / "images" / name)
+                ref_rgb = _load_rgb(ctx.ws.root / "images" / name)     # 一次读图同时供扫面(灰)与上色(RGB)
             except (ValueError, OSError):
                 continue
+            ref_gray = ref_rgb.mean(axis=2)
             src_grays, src_RTs = [], []
             for k in nb_idx:
                 nm, Rk, tk = poses[k]
@@ -117,9 +125,8 @@ class Real(Stage):
                 h, w = ref_gray.shape
                 uu = np.clip(us.ravel()[mask].astype(int), 0, w - 1)
                 vv = np.clip(vs.ravel()[mask].astype(int), 0, h - 1)
-                g = ref_gray[vv, uu]
                 all_pts.append(pts)
-                all_col.append(np.column_stack([g, g, g]))
+                all_col.append(ref_rgb[vv, uu])                        # 真彩色采样（非灰度）
             ctx.progress(self.name, 10 + int(80 * (vi + 1) / len(refs)),
                          f"视图 {vi + 1}/{len(refs)}：累计稠密点 {sum(len(p) for p in all_pts)}")
 
@@ -141,7 +148,7 @@ class Real(Stage):
             "num_depths": self.NDEPTH,
             "dense_points": int(len(P)),
             "sparse_points": int(len(sparse)),
-            "note": "v0.2 传统 MVS 基线（平面扫描 NCC + 跨视图置信融合）；学习型/PatchMatch 高档待落地",
+            "note": "v0.2 传统 MVS 基线（平面扫描 NCC + 逐视图鲁棒定标 + 跨视图置信融合 + 参考视图真彩色采样）；学习型/PatchMatch 高档待落地",
         }, ensure_ascii=False, indent=2), encoding="utf-8")
 
     @staticmethod
