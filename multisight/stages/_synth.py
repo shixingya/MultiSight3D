@@ -59,12 +59,19 @@ def write_obj_cube(path: Path) -> None:
     path.write_text("\n".join(lines) + "\n", encoding="ascii")
 
 
-def write_obj_trimesh(path: Path, verts: np.ndarray, faces: np.ndarray, name: str = "mesh") -> None:
-    """写 OBJ 三角网格：verts (N,3) float，faces (M,3) int（0-based → 文件内 1-based）。"""
+def write_obj_trimesh(path: Path, verts: np.ndarray, faces: np.ndarray, name: str = "mesh",
+                      colors: np.ndarray | None = None) -> None:
+    """写 OBJ 三角网格：verts (N,3) float，faces (M,3) int（0-based → 文件内 1-based）。
+    colors (N,3) uint8 可选：逐顶点色，写为 `v x y z r g b`（r/g/b 归一 0~1，Blender 可识）。"""
     verts = np.asarray(verts, dtype=np.float64)
     faces = np.asarray(faces, dtype=np.int64)
     out = [f"# MultiSight3D mesh ({len(verts)} verts / {len(faces)} tris)", f"o {name}"]
-    out += [f"v {x:.5f} {y:.5f} {z:.5f}" for x, y, z in verts]
+    if colors is not None:
+        c = np.asarray(colors, dtype=np.float64) / 255.0
+        out += [f"v {x:.5f} {y:.5f} {z:.5f} {r:.4f} {g:.4f} {b:.4f}"
+                for (x, y, z), (r, g, b) in zip(verts, c)]
+    else:
+        out += [f"v {x:.5f} {y:.5f} {z:.5f}" for x, y, z in verts]
     out += [f"f {a + 1} {b + 1} {c + 1}" for a, b, c in faces]
     path.write_text("\n".join(out) + "\n", encoding="ascii")
 

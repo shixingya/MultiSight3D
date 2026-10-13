@@ -24,15 +24,21 @@ def _ctx(ws):
     return StageContext(ws=ws, bus=Bus(), engine="real")
 
 
-def _write_plane_npz(ws, hs=8, ws_n=10, d0=5.0, hole=False):
+def _write_plane_npz(ws, hs=8, ws_n=10, d0=5.0, hole=False, color=True):
     vs, us = np.mgrid[0:hs, 0:ws_n]
     depth = np.full((hs, ws_n), d0, dtype=np.float64)
     if hole:
         depth[hs // 2, ws_n // 2] = np.nan
     K = np.array([[100.0, 0, ws_n / 2.0], [0, 100.0, hs / 2.0], [0, 0, 1.0]])
+    kw = {}
+    if color:
+        rgb = np.zeros((hs, ws_n, 3), dtype=np.uint8)
+        rgb[..., 0] = (us * 20 % 256).astype(np.uint8)      # 随位置变化的彩色
+        rgb[..., 2] = (vs * 30 % 256).astype(np.uint8)
+        kw["rgb"] = rgb
     np.savez(ws.file("mvs", "depthmaps", "view000.npz"), name="a.jpg", K=K,
              R=np.eye(3), t=np.zeros(3), us=us.astype(np.float64),
-             vs=vs.astype(np.float64), depth=depth)
+             vs=vs.astype(np.float64), depth=depth, **kw)
     return hs, ws_n
 
 
@@ -46,10 +52,23 @@ def test_real_mesh_from_depthmap(tmp_path):
     assert stats["engine"] == "real/range-image-mesh"
     assert stats["faces"] == 2 * (hs - 1) * (ws_n - 1)
     assert stats["vertices"] == hs * ws_n
+    assert stats["vertex_colors"] is True
 
     lines = (ws.root / "mesh" / "mesh.obj").read_text(encoding="ascii").splitlines()
-    assert sum(ln.startswith("v ") for ln in lines) == hs * ws_n
+    vlines = [ln for ln in lines if ln.startswith("v ")]
+    assert len(vlines) == hs * ws_n
+    assert all(len(ln.split()) == 7 for ln in vlines)          # v x y z r g b
     assert sum(ln.startswith("f ") for ln in lines) == stats["faces"]
+
+
+def test_real_mesh_without_color(tmp_path):
+    ws = Workspace.create(tmp_path, task_id="t1")
+    hs, ws_n = _write_plane_npz(ws, color=False)
+    MeshReal().run(_ctx(ws))
+    stats = json.loads((ws.root / "mesh" / "stats.json").read_text(encoding="utf-8"))
+    assert stats["vertex_colors"] is False
+    lines = (ws.root / "mesh" / "mesh.obj").read_text(encoding="ascii").splitlines()
+    assert all(len(ln.split()) == 4 for ln in lines if ln.startswith("v "))   # v x y z
 
 
 def test_real_mesh_hole_reduces_faces(tmp_path):

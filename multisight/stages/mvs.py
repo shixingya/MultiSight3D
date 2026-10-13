@@ -132,8 +132,11 @@ class Real(Stage):
                 all_col.append(ref_rgb[vv, uu])                        # 真彩色采样（非灰度）
                 # 落盘本视图被采纳的深度图（仅保留达 MIN_CONF/MAX_COST 的像素）供网格化
                 accepted = np.isfinite(dmap) & (conf >= self.MIN_CONF) & (cost <= self.MAX_COST)
+                gu = np.clip(us.astype(int), 0, w - 1)
+                gv = np.clip(vs.astype(int), 0, h - 1)
                 np.savez(dm_dir / f"view{vi:03d}.npz", name=name, K=K, R=Rv, t=tv,
-                         us=us, vs=vs, depth=np.where(accepted, dmap, np.nan))
+                         us=us, vs=vs, depth=np.where(accepted, dmap, np.nan),
+                         rgb=ref_rgb[gv, gu])                    # (Hs,Ws,3) 逐格真彩色，与顶点对齐
             ctx.progress(self.name, 10 + int(80 * (vi + 1) / len(refs)),
                          f"视图 {vi + 1}/{len(refs)}：累计稠密点 {sum(len(p) for p in all_pts)}")
 

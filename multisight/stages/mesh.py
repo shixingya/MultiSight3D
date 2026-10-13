@@ -46,18 +46,22 @@ class Real(Stage):
         ctx.progress(self.name, 10, f"真实网格：{len(npzs)} 张深度图距离图像网格化")
         all_v: list[np.ndarray] = []
         all_f: list[np.ndarray] = []
+        all_c: list[np.ndarray] = []
         base = 0
         done = 0
         for ni, p in enumerate(npzs):
             with np.load(p) as z:
                 depth, us, vs = z["depth"], z["us"], z["vs"]
                 K, R, t = z["K"], z["R"], z["t"]
+                rgb = z["rgb"] if "rgb" in z.files else None
             gap = self._edge_gap(us, depth, K) if self.MAX_EDGE_GAP_REL > 0 else None
             verts, faces = depth_map_to_mesh(us, vs, depth, K, (R, t), max_edge_gap=gap)
             if len(faces) == 0:
                 continue
             all_v.append(verts)
             all_f.append(faces + base)                  # 跨视图拼接：面索引整体偏移
+            if rgb is not None:                          # 顶点对齐的逐格真彩色（与 depth_map_to_mesh 同 valid 顺序）
+                all_c.append(rgb[np.isfinite(depth) & (depth > 0)])
             base += len(verts)
             done += 1
             ctx.progress(self.name, 10 + int(80 * (ni + 1) / len(npzs)),
@@ -67,7 +71,8 @@ class Real(Stage):
             raise ValueError("深度图未产生任何有效网格面（覆盖/置信不足）；不臆造几何")
         V = np.vstack(all_v)
         F = np.vstack(all_f)
-        write_obj_trimesh(ctx.ws.file("mesh", "mesh.obj"), V, F)
+        colors = np.vstack(all_c) if len(all_c) == len(all_v) and len(V) == sum(len(c) for c in all_c) else None
+        write_obj_trimesh(ctx.ws.file("mesh", "mesh.obj"), V, F, colors=colors)
         ctx.progress(self.name, 100, f"网格重建完成：{len(V)} 顶点 / {len(F)} 三角形")
         (ctx.ws.root / "mesh" / "stats.json").write_text(json.dumps({
             "engine": "real/range-image-mesh",
@@ -75,7 +80,8 @@ class Real(Stage):
             "views_meshed": done,
             "vertices": int(len(V)),
             "faces": int(len(F)),
-            "note": "v0.3 起步：逐视图距离图像网格化直接拼接；跨视图统一缝合/泊松重建为后续里程碑",
+            "vertex_colors": bool(colors is not None),
+            "note": "v0.3 起步：逐视图距离图像网格化直接拼接（顶点带参考视图真彩色）；跨视图统一缝合/泊松重建为后续里程碑",
         }, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def _edge_gap(self, us, depth, K):
