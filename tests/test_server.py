@@ -101,6 +101,9 @@ def test_task_detail_has_quality(client):
     assert q is not None and "warnings" in q and "advice" in q
     # 照片不足（<15）→ report 应给出补拍建议
     assert any("环形" in a or "补" in a for a in q["advice"])
+    # FR-10 §5.3 模型统计：至少含照片数与 sfm 指标
+    assert q["stats"]["photo_count"] == 3
+    assert "register_rate" in q["stats"]
 
 
 def test_report_endpoint(client):
@@ -120,9 +123,27 @@ def test_webui_quality_wiring(client):
     """前端契约回归：结果页质量卡片（FR-10）挂载点与渲染接线不得被误删。"""
     c, _ = client
     html = c.get("/").text
-    assert 'id="quality"' in html and 'id="qbody"' in html
+    assert 'id="quality"' in html and 'id="qbody"' in html and 'id="qstats"' in html
     js = c.get("/app.js")
     assert js.status_code == 200
     body = js.text
     assert "renderQuality" in body and "t.quality" in body   # 消费后端 quality 字段
     assert "q.warnings" in body and "q.advice" in body        # 渲染警告与建议
+    assert "renderStats" in body and "q.stats" in body        # FR-10 模型统计渲染
+
+
+def test_summarize_stats_helper():
+    from multisight.server.app import _summarize_stats
+    rep = {"photo_count": 30, "pipeline_duration_s": 12.5,
+           "sfm": {"register_rate": 0.9, "sparse_points": 500},
+           "mvs": {"dense_points": 8000},
+           "mesh": {"faces": 4000, "watertight": False, "area": 12.3,
+                    "volume_abs": 4.5, "bbox_extent": [1.0, 2.0, 3.0]},
+           "texture": {"triangles": 4000}}
+    s = _summarize_stats(rep)
+    assert s["photo_count"] == 30 and s["pipeline_duration_s"] == 12.5
+    assert s["mesh_faces"] == 4000 and s["glb_triangles"] == 4000
+    assert s["mesh_area"] == 12.3 and s["mesh_bbox_extent"] == [1.0, 2.0, 3.0]
+    # 空/缺字段诚实省略（不塞 None）
+    s2 = _summarize_stats({"sfm": {}})
+    assert "photo_count" not in s2 and "register_rate" not in s2

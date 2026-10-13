@@ -55,6 +55,31 @@ def _read_report(ws) -> dict | None:
         return None
 
 
+def _summarize_stats(rep: dict) -> dict:
+    """从 report.json 组装结果页模型统计（PRD §5.3：面数/尺寸/耗时）。只取存在的键，诚实缺省。"""
+    sfm, mvs, mesh, tex = (rep.get("sfm") or {}, rep.get("mvs") or {},
+                           rep.get("mesh") or {}, rep.get("texture") or {})
+    stats = {"photo_count": rep.get("photo_count")}
+    if sfm.get("register_rate") is not None:
+        stats["register_rate"] = sfm["register_rate"]
+    if sfm.get("sparse_points") is not None:
+        stats["sparse_points"] = sfm["sparse_points"]
+    if mvs.get("dense_points") is not None:
+        stats["dense_points"] = mvs["dense_points"]
+    if mesh.get("faces") is not None:
+        stats["mesh_faces"] = mesh["faces"]
+    if mesh.get("watertight") is not None:
+        stats["watertight"] = mesh["watertight"]
+    for k in ("area", "volume_abs", "bbox_extent"):
+        if mesh.get(k) is not None:
+            stats["mesh_" + k] = mesh[k]
+    if tex.get("triangles") is not None:
+        stats["glb_triangles"] = tex["triangles"]
+    if rep.get("pipeline_duration_s") is not None:
+        stats["pipeline_duration_s"] = rep["pipeline_duration_s"]
+    return {k: v for k, v in stats.items() if v is not None}
+
+
 def create_app() -> FastAPI:
     app = FastAPI(title="MultiSight3D", version="0.1.0")
     tm = TaskManager(_data_dir)
@@ -97,7 +122,8 @@ def create_app() -> FastAPI:
             raise HTTPException(404, "task_not_found")
         manifest = ws.manifest
         rep = _read_report(ws)
-        quality = {"warnings": rep.get("warnings", []), "advice": rep.get("advice", [])} if rep else None
+        quality = ({"warnings": rep.get("warnings", []), "advice": rep.get("advice", []),
+                    "stats": _summarize_stats(rep)} if rep else None)
         return {**summarize(manifest),
                 "artifacts": ws.list_artifacts(),
                 "quality": quality,

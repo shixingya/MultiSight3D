@@ -173,10 +173,11 @@ async function loadTaskArtifacts(id) {
 
 /* ---------- 质量自检（FR-09/FR-10） ---------- */
 function renderQuality(q) {
-  const card = $('#quality'), body = $('#qbody'), meta = $('#qmeta');
-  body.innerHTML = '';
+  const card = $('#quality'), body = $('#qbody'), meta = $('#qmeta'), statsBox = $('#qstats');
+  body.innerHTML = ''; statsBox.innerHTML = '';
   if (!q) { card.style.display = 'none'; return; }
   const warnings = q.warnings || [], advice = q.advice || [];
+  renderStats(q.stats || {});
   meta.textContent = warnings.length ? `${warnings.length} 条警告` : '无警告';
   if (!warnings.length && !advice.length) {
     const li = document.createElement('li');
@@ -186,6 +187,29 @@ function renderQuality(q) {
   warnings.forEach((w) => { const li = document.createElement('li'); li.className = 'warn'; li.textContent = '⚠ ' + w; body.appendChild(li); });
   advice.forEach((a) => { const li = document.createElement('li'); li.className = 'advice'; li.textContent = '💡 ' + a; body.appendChild(li); });
   card.style.display = '';
+}
+
+/* 结果页模型统计（FR-10 §5.3：面数/尺寸/耗时） */
+function renderStats(s) {
+  const box = $('#qstats'); box.innerHTML = '';
+  const esc = (v) => String(v == null ? '' : v).replace(/</g, '&lt;');
+  const fmt = (n) => (typeof n === 'number' ? (n >= 1000 ? n.toLocaleString('en-US') : (Number.isInteger(n) ? n : n.toFixed(2))) : esc(n));
+  const chips = [];
+  if (s.photo_count != null) chips.push(['📷 ' + fmt(s.photo_count) + ' 张', null]);
+  if (s.register_rate != null) chips.push(['注册率 ' + Math.round(s.register_rate * 100) + '%', null]);
+  if (s.dense_points != null) chips.push(['稠密 ' + fmt(s.dense_points) + ' 点', null]);
+  if (s.mesh_faces != null) chips.push(['网格 ' + fmt(s.mesh_faces) + ' 面', null]);
+  if (s.watertight != null) chips.push([s.watertight ? '水密' : '开洞', s.watertight ? 'ok' : 'bad']);
+  if (s.mesh_area != null) chips.push(['面积 ' + fmt(s.mesh_area), null]);
+  if (s.mesh_volume_abs != null) chips.push(['体积 ' + fmt(s.mesh_volume_abs), null]);
+  if (s.mesh_bbox_extent) chips.push(['尺寸 ' + s.mesh_bbox_extent.map((v) => Number(v).toFixed(2)).join('×'), null]);
+  if (s.pipeline_duration_s != null) chips.push(['耗时 ' + fmt(s.pipeline_duration_s) + 's', null]);
+  chips.forEach(([txt, cls]) => {
+    const el = document.createElement('span');
+    el.textContent = txt;
+    if (cls) el.style.color = cls === 'ok' ? 'var(--ok)' : 'var(--bad)';
+    box.appendChild(el);
+  });
 }
 
 function showHint(html) {

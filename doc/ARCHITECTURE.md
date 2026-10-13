@@ -78,7 +78,7 @@ stage.run ──progress()──▶ Bus.publish ──▶ CLI 控制台渲染线
 | `GET /api/health` | `{status, engine}` |
 | `POST /api/tasks` | multipart `photos`（≤500 张、单张 ≤20MB）+ `preset`，后台线程起管线 |
 | `GET /api/tasks` | manifest 扫描聚合的任务列表（重启可恢复） |
-| `GET /api/tasks/{id}` | 摘要 + `artifacts` + `quality`（warnings+advice，无报告时 null） + `live` |
+| `GET /api/tasks/{id}` | 摘要 + `artifacts` + `quality`（warnings+advice+stats 模型统计，无报告时 null） + `live` |
 | `GET /api/tasks/{id}/report` | 完整 `report.json`（未就绪 404 `report_not_ready`） |
 | `GET /api/tasks/{id}/events` | **SSE** 实时/回放进度 |
 | `GET /api/tasks/{id}/file?path=` | 产物下载（`safe_relpath`：限定工作区内 + 后缀白名单；manifest.json 不对外） |

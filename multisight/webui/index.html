@@ -45,6 +45,8 @@
   .qlist li.warn { color:var(--bad); background:#1a1214; }
   .qlist li.advice { color:var(--text); background:#101822; }
   .qok { color:var(--ok); font-size:13px; }
+  .qstats { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px; }
+  .qstats span { font-size:12px; padding:3px 9px; border-radius:8px; background:#0d1017; border:1px solid var(--line); color:var(--text); }
   .right { display:flex; flex-direction:column; gap:18px; }
   .cols { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
   @media (max-width:900px){ main{grid-template-columns:1fr;} .cols{grid-template-columns:1fr;} }
@@ -96,6 +98,7 @@
     </div>
     <div class="card" id="quality" style="display:none">
       <h2>质量自检 <small id="qmeta" style="color:var(--dim);text-transform:none"></small></h2>
+      <div class="qstats" id="qstats"></div>
       <ul class="qlist" id="qbody"></ul>
     </div>
     <div class="card">
