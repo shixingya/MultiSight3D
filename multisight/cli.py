@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import shutil
 import sys
 import threading
@@ -19,6 +20,45 @@ from pathlib import Path
 from .events import Bus
 from .pipeline import PRESETS, run_pipeline
 from .workspace import STAGES, Workspace
+
+
+def _fmt_stats_line(sfm: dict, mvs: dict, mesh: dict, tex: dict) -> str:
+    parts = []
+    if sfm:
+        rate = sfm.get("register_rate")
+        seg = f"SfM {sfm.get('registered', '?')}/{sfm.get('total', '?')} 注册"
+        if rate is not None:
+            seg += f"({rate:.0%})"
+        if sfm.get("sparse_points"):
+            seg += f"·{sfm['sparse_points']} 稀疏点"
+        parts.append(seg)
+    if mvs and mvs.get("dense_points") is not None:
+        parts.append(f"稠密 {mvs['dense_points']} 点")
+    if mesh and mesh.get("faces") is not None:
+        wt = "水密" if mesh.get("watertight") else "开洞"
+        parts.append(f"网格 {mesh.get('vertices', '?')}v/{mesh['faces']}f（{wt}）")
+    if tex and tex.get("bbox_extent"):
+        e = "×".join(f"{v:.2f}" for v in tex["bbox_extent"])
+        parts.append(f"GLB {tex.get('triangles', '?')} 面·尺寸 {e}")
+    return "  |  ".join(parts)
+
+
+def _print_report_digest(ws: Workspace) -> bool:
+    """打印质量报告人读摘要（阶段指标 + 警告 + 补拍建议）。无报告时返回 False。"""
+    path = ws.root / "report" / "report.json"
+    if not path.is_file():
+        return False
+    r = json.loads(path.read_text(encoding="utf-8"))
+    line = _fmt_stats_line(r.get("sfm", {}) or {}, r.get("mvs", {}) or {},
+                           r.get("mesh", {}) or {}, r.get("texture", {}) or {})
+    print("\n📊 质量摘要" + (f"：{line}" if line else ""))
+    for w in r.get("warnings", []) or []:
+        print(f"  ⚠ {w}")
+    for a in r.get("advice", []) or []:
+        print(f"  💡 {a}")
+    if not r.get("warnings") and not r.get("advice"):
+        print("  ✔ 无警告")
+    return True
 
 
 def _console_listener(bus: Bus) -> None:
@@ -80,6 +120,7 @@ def cmd_reconstruct(args: argparse.Namespace) -> int:
         print(f"\n完成 ✅  产物目录：{ws.root}")
         for rel in ws.list_artifacts():
             print(f"  - {rel}")
+        _print_report_digest(ws)
         return 0
     print(f"\n管线中断 ❌  已完成产物保留在 {ws.root}；"
           f"修复输入后运行：multisight reconstruct -o {base} --task-id {ws.task_id} --resume")
@@ -92,6 +133,8 @@ def cmd_report(args: argparse.Namespace) -> int:
     if not path.is_file():
         print("任务尚未产出报告（管线未跑完）", file=sys.stderr)
         return 1
+    if args.summary and _print_report_digest(ws):
+        return 0
     print(path.read_text(encoding="utf-8"))
     return 0
 
@@ -206,9 +249,10 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--resume", action="store_true", help="从 manifest 断点续跑")
     r.set_defaults(func=cmd_reconstruct)
 
-    rp = sub.add_parser("report", help="打印任务质量报告 JSON")
+    rp = sub.add_parser("report", help="打印任务质量报告（默认原始 JSON，--summary 出人读摘要）")
     rp.add_argument("--output", default="workspace")
     rp.add_argument("--task-id", required=True)
+    rp.add_argument("--summary", action="store_true", help="打印阶段指标/警告/补拍建议的人读摘要")
     rp.set_defaults(func=cmd_report)
 
     st = sub.add_parser("stages", help="列出管线阶段与档位")

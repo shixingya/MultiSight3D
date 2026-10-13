@@ -40,3 +40,22 @@ def test_stages_lists_all(capsys):
     out = capsys.readouterr().out
     for s in ("preprocess", "sfm", "mvs", "mesh", "texture", "report"):
         assert s in out
+
+
+def test_reconstruct_prints_quality_digest(tmp_path, photos_dir, capsys):
+    out = tmp_path / "ws"
+    assert main(["reconstruct", "-i", str(photos_dir), "-o", str(out),
+                 "--preset", "fast", "--engine", "mock"]) == 0
+    printed = capsys.readouterr().out
+    assert "质量摘要" in printed
+    assert "SfM" in printed
+
+
+def test_report_summary_mode(tmp_path, photos_dir, capsys):
+    out = tmp_path / "ws"
+    main(["reconstruct", "-i", str(photos_dir), "-o", str(out), "--engine", "mock"])
+    capsys.readouterr()
+    assert main(["report", "--output", str(out), "--task-id",
+                 str(next(iter(__import__('os').listdir(out)))), "--summary"]) == 0
+    printed = capsys.readouterr().out
+    assert "质量摘要" in printed
