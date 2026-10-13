@@ -66,6 +66,8 @@ class Mock(Stage):
             warnings.append(f"稠密点云仅 {mvs_stats.get('dense_points', 0)} 点（<{MVS_MIN_DENSE}），重建可能稀疏/有洞；增加照片或改善纹理/重叠")
         if mesh_stats and mesh_stats.get("faces", 0) < MESH_MIN_FACES:
             warnings.append(f"网格面数仅 {mesh_stats.get('faces', 0)}（<{MESH_MIN_FACES}），覆盖/置信不足；检查深度图质与视图数")
+        if mesh_stats and mesh_stats.get("faces", 0) > 0 and mesh_stats.get("watertight") is False:
+            warnings.append(f"网格非水密（{mesh_stats.get('boundary_edges', 0)} 条边界边），存在开洞/不封闭；适屏渲染可用，3D 打印前需补洞/缝合")
 
         advice.extend(_retake_advice(prep, sfm_stats, mvs_stats))
 

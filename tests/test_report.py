@@ -72,6 +72,18 @@ def test_sfm_register_rate_warning(tmp_path):
     assert any("注册率" in w for w in report["warnings"])
 
 
+def test_open_mesh_watertight_warning(tmp_path):
+    report = _run(_ws(tmp_path),
+                  mesh={"faces": 5000, "watertight": False, "boundary_edges": 312})
+    assert any("非水密" in w and "312" in w for w in report["warnings"])
+
+
+def test_watertight_mesh_no_warning(tmp_path):
+    report = _run(_ws(tmp_path),
+                  mesh={"faces": 5000, "watertight": True, "boundary_edges": 0})
+    assert not any("非水密" in w for w in report["warnings"])
+
+
 def test_retake_advice_from_signals(tmp_path):
     ws = _ws(tmp_path)
     ws.file("images", "list.json").write_text(json.dumps(

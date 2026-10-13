@@ -73,3 +73,34 @@ def depth_map_to_mesh(us, vs, depth, K: np.ndarray, RT, *,
         faces = faces[keep]
 
     return vertices, faces
+
+
+def analyze_mesh_topology(vertices, faces):
+    """网格拓扑与 FR-09 水密性检查（纯 numpy，无 scipy）。
+
+    将每个三角面的三条无向边排序去重后计数：恰出现 1 次为边界边（开洞），>2 次为非流形边。
+    封闭流形网格（水密） ⇔ 无边界边且无非流形边。欧拉示性数 χ = V − E + F（仅计被面引用
+    的顶点），可辅助判断连通分量/洞情况。返回 stats 字典（供 mesh/stats.json 与 report 消费）。
+    """
+    faces = np.asarray(faces, dtype=np.int64).reshape(-1, 3)
+    n_verts = int(len(vertices))
+    if faces.shape[0] == 0:
+        return {"faces": 0, "edges": 0, "boundary_edges": 0, "non_manifold_edges": 0,
+                "is_watertight": False, "euler_characteristic": n_verts, "unused_vertices": n_verts}
+    he = np.concatenate([faces[:, [0, 1]], faces[:, [1, 2]], faces[:, [2, 0]]], axis=0)  # (3M,2)
+    und = np.sort(he, axis=1)
+    key = und[:, 0] * n_verts + und[:, 1]               # 无向边唯一键（索引 < n_verts）
+    uniq, counts = np.unique(key, return_counts=True)
+    boundary = int((counts == 1).sum())
+    non_manifold = int((counts > 2).sum())
+    used = np.unique(faces.ravel())
+    euler = int(len(used) - len(uniq) + len(faces))
+    return {
+        "faces": int(len(faces)),
+        "edges": int(len(uniq)),
+        "boundary_edges": boundary,
+        "non_manifold_edges": non_manifold,
+        "is_watertight": boundary == 0 and non_manifold == 0,
+        "euler_characteristic": euler,
+        "unused_vertices": int(n_verts - len(used)),
+    }

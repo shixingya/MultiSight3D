@@ -14,7 +14,7 @@ import json
 import numpy as np
 
 from ..pipeline import Stage, StageContext
-from ..mvs import depth_map_to_mesh
+from ..mvs import analyze_mesh_topology, depth_map_to_mesh
 from ._synth import write_obj_cube, write_obj_trimesh
 
 
@@ -73,7 +73,8 @@ class Real(Stage):
         F = np.vstack(all_f)
         colors = np.vstack(all_c) if len(all_c) == len(all_v) and len(V) == sum(len(c) for c in all_c) else None
         write_obj_trimesh(ctx.ws.file("mesh", "mesh.obj"), V, F, colors=colors)
-        ctx.progress(self.name, 100, f"网格重建完成：{len(V)} 顶点 / {len(F)} 三角形")
+        topo = analyze_mesh_topology(V, F)
+        ctx.progress(self.name, 100, f"网格重建完成：{len(V)} 顶点 / {len(F)} 三角形（水密={topo['is_watertight']}，边界边={topo['boundary_edges']}）")
         (ctx.ws.root / "mesh" / "stats.json").write_text(json.dumps({
             "engine": "real/range-image-mesh",
             "depth_maps": len(npzs),
@@ -81,7 +82,11 @@ class Real(Stage):
             "vertices": int(len(V)),
             "faces": int(len(F)),
             "vertex_colors": bool(colors is not None),
-            "note": "v0.3 起步：逐视图距离图像网格化直接拼接（顶点带参考视图真彩色）；跨视图统一缝合/泊松重建为后续里程碑",
+            "watertight": topo["is_watertight"],
+            "boundary_edges": topo["boundary_edges"],
+            "non_manifold_edges": topo["non_manifold_edges"],
+            "euler_characteristic": topo["euler_characteristic"],
+            "note": "v0.3 起步：逐视图距离图像网格化直接拼接（顶点带参考视图真彩色）；跨视图统一缝合/泊松重建为后续里程碑（拼接网格典型为开洞非水密）",
         }, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def _edge_gap(self, us, depth, K):
