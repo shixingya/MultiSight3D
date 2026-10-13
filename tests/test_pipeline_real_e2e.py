@@ -49,5 +49,11 @@ def test_real_pipeline_end_to_end_glb(tmp_path):
     assert tex["triangles"] == mesh["faces"]
     assert tex["vertex_colors"] is True
 
+    # FR-08 PLY 网格产物可回读，顶点/面数与 stats 一致
+    from multisight.stages._synth import read_ply_mesh
+    pv, pf, pc = read_ply_mesh(ws.root / "mesh" / "mesh.ply")
+    assert len(pv) == mesh["vertices"] and len(pf) == mesh["faces"]
+    assert pc is not None and pc.shape == (mesh["vertices"], 3)
+
     glb = (ws.root / "texture" / "model.glb").read_bytes()
     assert glb[:4] == b"glTF" and int.from_bytes(glb[4:8], "little") == 2

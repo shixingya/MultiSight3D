@@ -100,6 +100,50 @@ def write_ply_mesh(path: Path, verts: np.ndarray, faces: np.ndarray,
     path.write_text("\n".join(lines) + "\n", encoding="ascii")
 
 
+def read_ply_mesh(path: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray | None]:
+    """读 ASCII PLY 三角网格（与 write_ply_mesh 对称）：返回 (vertices (N,3), faces (M,3) 0-based,
+    colors (N,3) uint8 或 None)。只支持本包写出的 vertex(+可选 red/green/blue) + face(3 索引) 形式。"""
+    lines = Path(path).read_text(encoding="ascii").splitlines()
+    n_verts = n_faces = 0
+    vprops: list[str] = []
+    elem = ""
+    header_end = None
+    for i, ln in enumerate(lines):
+        tok = ln.split()
+        if not tok:
+            continue
+        if tok[0] == "element":
+            elem = tok[1]
+            if elem == "vertex":
+                n_verts = int(tok[2])
+            elif elem == "face":
+                n_faces = int(tok[2])
+        elif tok[0] == "property" and elem == "vertex" and tok[1] != "list":
+            vprops.append(tok[2])
+        elif tok[0] == "end_header":
+            header_end = i
+            break
+    if header_end is None:
+        raise ValueError("PLY 缺 end_header，非法网格")
+    body = lines[header_end + 1:]
+    has_color = "red" in vprops and "green" in vprops and "blue" in vprops
+    xi, yi, zi = vprops.index("x"), vprops.index("y"), vprops.index("z")
+    verts = np.zeros((n_verts, 3), dtype=np.float64)
+    colors = np.zeros((n_verts, 3), dtype=np.uint8) if has_color else None
+    for r in range(n_verts):
+        vals = body[r].split()
+        verts[r] = [float(vals[xi]), float(vals[yi]), float(vals[zi])]
+        if has_color:
+            colors[r] = [int(vals[vprops.index("red")]), int(vals[vprops.index("green")]),
+                         int(vals[vprops.index("blue")])]
+    faces = np.zeros((n_faces, 3), dtype=np.int64)
+    for r in range(n_faces):
+        vals = body[n_verts + r].split()
+        assert int(vals[0]) == 3, "read_ply_mesh 仅支持三角面"
+        faces[r] = [int(vals[1]), int(vals[2]), int(vals[3])]
+    return verts, faces, colors
+
+
 def read_obj_trimesh(path: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray | None]:
     """读 OBJ 三角网格：返回 (positions (N,3), indices (M,) 0-based, colors (N,3) uint8 或 None)。
     兼容 `v x y z [r g b]`（色归 0~1 → 回乘 255）与多边形面（扇形三角剖分）、`f a/b/c` 组索。"""

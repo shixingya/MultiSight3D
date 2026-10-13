@@ -120,3 +120,21 @@ def test_write_ply_mesh_colorless(tmp_path):
     assert "property uchar red" not in lines
     assert lines[lines.index("end_header") + 1].split() == ["0.00000", "0.00000", "0.00000"]
     assert lines[-2:] == ["3 0 1 2", "3 1 3 2"]
+
+
+def test_ply_mesh_write_read_roundtrip(tmp_path):
+    from multisight.stages._synth import read_ply_mesh
+    v = np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0], [1, 1, 0]], float)
+    f = np.array([[0, 1, 2], [1, 3, 2]], np.int64)
+    c = np.array([[10, 20, 30], [40, 50, 60], [70, 80, 90], [100, 110, 120]], np.uint8)
+    p = tmp_path / "rt.ply"
+    write_ply_mesh(p, v, f, colors=c)
+    rv, rf, rc = read_ply_mesh(p)
+    assert np.allclose(rv, v)
+    assert np.array_equal(rf, f)
+    assert np.array_equal(rc, c)
+    # 无色往返
+    p2 = tmp_path / "rt2.ply"
+    write_ply_mesh(p2, v, f)
+    rv2, rf2, rc2 = read_ply_mesh(p2)
+    assert np.allclose(rv2, v) and np.array_equal(rf2, f) and rc2 is None
