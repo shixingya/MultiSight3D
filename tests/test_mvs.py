@@ -10,7 +10,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from multisight.mvs import plane_sweep_depth, depth_map_to_points, remove_scatter_noise, voxel_downsample, point_cloud_metrics
+from multisight.mvs import plane_sweep_depth, depth_map_to_points, remove_scatter_noise, voxel_downsample, point_cloud_metrics, oriented_bounding_box
 
 
 def _K(W=80, H=64, focal=120.0):
@@ -187,3 +187,31 @@ def test_point_cloud_metrics_box_8corners():
 def test_point_cloud_metrics_empty():
     m = point_cloud_metrics(np.zeros((0, 3)))
     assert m["count"] == 0 and m["bbox_extent"] == [0.0, 0.0, 0.0] and m["pca_std"] == [0.0, 0.0, 0.0]
+
+
+def _rot_z(theta):
+    c, s = np.cos(theta), np.sin(theta)
+    return np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]])
+
+
+def test_oriented_bounding_box_axis_aligned():
+    P = np.array([[sx, sy, sz] for sx in (-1, 1) for sy in (-2, 2) for sz in (-3, 3)], float)
+    obb = oriented_bounding_box(P)
+    assert obb["extent"] == pytest.approx([6.0, 4.0, 2.0], abs=1e-6)   # 降序
+    assert obb["volume"] == pytest.approx(48.0, abs=1e-6)
+    assert obb["center"] == pytest.approx([0.0, 0.0, 0.0], abs=1e-6)
+
+
+def test_oriented_bounding_box_rotation_invariant():
+    # 同一长方体绕 z 轴旋转后 OBB 尺寸/体积不变（证明真主轴对齐，非坐标轴 bbox）
+    P = np.array([[sx, sy, sz] for sx in (-1, 1) for sy in (-2, 2) for sz in (-3, 3)], float)
+    Pr = P @ _rot_z(0.7).T
+    obb0, obbr = oriented_bounding_box(P), oriented_bounding_box(Pr)
+    assert obbr["extent"] == pytest.approx(obb0["extent"], abs=1e-6)
+    assert obbr["volume"] == pytest.approx(48.0, abs=1e-6)
+    assert np.allclose(obbr["center"], [0, 0, 0], atol=1e-6)
+
+
+def test_oriented_bounding_box_few_points_honest():
+    obb = oriented_bounding_box(np.array([[0.0, 0, 0], [1, 1, 1]]))
+    assert obb["volume"] == 0.0 and obb["extent"] == [0.0, 0.0, 0.0]

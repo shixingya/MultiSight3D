@@ -13,9 +13,10 @@ PRD §11-2 决策「学习型深度网络首发 + PatchMatch 兜底」的落地�
 from __future__ import annotations
 
 from .depth import plane_sweep_depth
-from .fuse import depth_map_to_points, remove_scatter_noise, voxel_downsample, point_cloud_metrics
+from .fuse import depth_map_to_points, remove_scatter_noise, voxel_downsample, point_cloud_metrics, oriented_bounding_box
 from .meshify import analyze_mesh_topology, depth_map_to_mesh, mesh_metrics, weld_mesh_vertices
 
 __all__ = ["plane_sweep_depth", "depth_map_to_points", "remove_scatter_noise",
-           "voxel_downsample", "point_cloud_metrics", "depth_map_to_mesh",
-           "analyze_mesh_topology", "mesh_metrics", "weld_mesh_vertices"]
+           "voxel_downsample", "point_cloud_metrics", "oriented_bounding_box",
+           "depth_map_to_mesh", "analyze_mesh_topology", "mesh_metrics",
+           "weld_mesh_vertices"]

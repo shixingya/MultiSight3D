@@ -15,7 +15,7 @@ import json
 import numpy as np
 
 from ..pipeline import Stage, StageContext
-from ..mvs import plane_sweep_depth, depth_map_to_points, remove_scatter_noise, point_cloud_metrics
+from ..mvs import plane_sweep_depth, depth_map_to_points, remove_scatter_noise, point_cloud_metrics, oriented_bounding_box
 from ..mvs.colmap_io import read_images, read_ply_xyz, read_shared_K
 from ._synth import sphere_points, write_ply_ascii
 
@@ -155,6 +155,7 @@ class Real(Stage):
         P, C = self._voxel_dedup(P, C, step=voxel)
         write_ply_ascii(ctx.ws.file("mvs", "fusion.ply"), P, C)
         pcm = point_cloud_metrics(P)
+        obb = oriented_bounding_box(P)
 
         ctx.progress(self.name, 100, f"稠密点云完成：{len(P)} 点")
         (ctx.ws.root / "mvs" / "stats.json").write_text(json.dumps({
@@ -171,6 +172,8 @@ class Real(Stage):
             "cloud_bbox_extent": pcm["bbox_extent"],
             "cloud_pca_std": pcm["pca_std"],
             "cloud_centroid": pcm["centroid"],
+            "cloud_obb_extent": obb["extent"],
+            "cloud_obb_volume": obb["volume"],
             "note": "v0.2 传统 MVS 基线（平面扫描 NCC + 逐视图鲁棒定标 + 跨视图置信融合 + 参考视图真彩色采样）；学习型/PatchMatch 高档待落地",
         }, ensure_ascii=False, indent=2), encoding="utf-8")
 

@@ -130,3 +130,24 @@ def point_cloud_metrics(points):
             "centroid": [round(float(x), 6) for x in centroid],
             "bbox_extent": [round(float(x), 6) for x in bbox_extent],
             "pca_std": [round(float(x), 6) for x in pca_std]}
+
+
+def oriented_bounding_box(points):
+    """主轴朝向包围盒 OBB（FR-08 尺寸度量，纯 numpy）：以 PCA 主轴为基投影点云取
+    各轴极值。与坐标轴朝向无关（旋转同一点云结果不变）。返回 dict：center(3)、
+    extent(3 全边长，按降序规范化保证与特征向量顺序无关)、volume。空/不足 3 点诚实给零。
+    """
+    P = np.asarray(points, dtype=np.float64).reshape(-1, 3)
+    n = P.shape[0] if P.size else 0
+    if n < 3:
+        return {"center": [0.0, 0.0, 0.0], "extent": [0.0, 0.0, 0.0], "volume": 0.0}
+    c = P.mean(axis=0)
+    cov = np.cov((P - c).T)
+    eigval, eigvec = np.linalg.eigh(np.atleast_2d(cov))     # 列向量为标准正交主轴
+    proj = (P - c) @ eigvec                                  # 投到主轴坐标系 (N,3)
+    ext = proj.max(axis=0) - proj.min(axis=0)                # 各轴全边长
+    ext_sorted = np.sort(ext)[::-1]                          # 降序规范化
+    center = c + eigvec @ ((proj.max(axis=0) + proj.min(axis=0)) / 2)
+    return {"center": [round(float(x), 6) for x in center],
+            "extent": [round(float(x), 6) for x in ext_sorted],
+            "volume": round(float(np.prod(ext)), 6)}
