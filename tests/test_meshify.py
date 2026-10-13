@@ -10,7 +10,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from multisight.mvs import analyze_mesh_topology, depth_map_to_mesh, depth_map_to_points
+from multisight.mvs import analyze_mesh_topology, depth_map_to_mesh, depth_map_to_points, weld_mesh_vertices
 
 pytest.importorskip("numpy")
 
@@ -131,3 +131,48 @@ def test_topology_planar_grid_is_open():
     t = analyze_mesh_topology(verts, faces)
     assert t["boundary_edges"] > 0                        # 平面网格边缘开洞
     assert t["is_watertight"] is False
+
+
+def test_weld_merges_duplicate_vertices():
+    v = np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0],
+                  [0.001, 0, 0], [1.001, 0, 0], [0, 0.999, 0]], float)
+    f = np.array([[0, 1, 2], [3, 4, 5]], np.int64)
+    nv, nf, nc = weld_mesh_vertices(v, f, tol=0.01)
+    assert len(nv) == 3                                   # 两组重合顶点各归一
+    assert len(nf) == 2 and len(set(nf[0])) == 3           # 两面都非退化
+    assert np.array_equal(nf[0], nf[1])                    # 两组同拓扑→焊后重合为同一三角
+    assert nc is None
+
+
+def test_weld_averages_colors():
+    v = np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0], [0.002, 0, 0]], float)
+    f = np.array([[0, 1, 2], [1, 3, 2]], np.int64)       # 面 1 用重合顶点 3
+    c = np.array([[255, 0, 0], [0, 255, 0], [0, 0, 255], [255, 0, 0]], np.uint8)
+    nv, nf, nc = weld_mesh_vertices(v, f, c, tol=0.01)
+    assert len(nv) == 3                                   # 顶点 0 与 3 焊接
+    assert nc.dtype == np.uint8
+    # 焊接后代表色为同组顶点色均值（红+红 → 仍为红）
+    assert [0.001, 0.0, 0.0] == pytest.approx(list(nv[0]), abs=1e-3)
+    assert list(nc[0]) == [255, 0, 0]
+
+
+def test_weld_drops_degenerate_faces():
+    # 同一面内两顶点重合（tol 内）→ 焊接后退化→丢弃
+    v = np.array([[0, 0, 0], [0.001, 0, 0], [0, 1, 0], [1, 1, 0]], float)
+    f = np.array([[0, 1, 2], [2, 3, 0]], np.int64)        # 面0退化，面1保留
+    nv, nf, _ = weld_mesh_vertices(v, f, tol=0.01)
+    assert len(nv) == 3
+    assert len(nf) == 1
+    assert (nf[0] == np.array([2, 1, 0])).all() or len(set(nf[0])) == 3
+
+
+def test_weld_nonpositive_tol_noop():
+    v = np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0]], float)
+    f = np.array([[0, 1, 2]], np.int64)
+    nv, nf, _ = weld_mesh_vertices(v, f, tol=0.0)
+    assert np.array_equal(nv, v) and np.array_equal(nf, f)
+
+
+def test_weld_empty_noop():
+    nv, nf, nc = weld_mesh_vertices(np.zeros((0, 3)), np.zeros((0, 3), np.int64), tol=0.1)
+    assert len(nv) == 0 and len(nf) == 0 and nc is None

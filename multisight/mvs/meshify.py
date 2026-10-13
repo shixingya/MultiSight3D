@@ -104,3 +104,44 @@ def analyze_mesh_topology(vertices, faces):
         "euler_characteristic": euler,
         "unused_vertices": int(n_verts - len(used)),
     }
+
+
+def weld_mesh_vertices(vertices, faces, colors=None, *, tol: float):
+    """跨视图缝合首步：重复/重合顶点焊接（纯 numpy，体素量化归并）。
+
+    距离图像网格化逐视图直接拼接时，相邻视图重叠带会产几乎重合的重复顶点。本件按
+    `tol` 就近量化顶点坐标（np.round 避免格边界漏焊）后取同格顶点均值合并为一个代表顶点（颜色同样取均值），重映射面索引，
+    丢弃因焊接而退化的面（任两顶点重合）。返回 (vertices', faces', colors' 或 None)。
+    tol<=0 或空网格时原样返回（不伤数据）。焊接后拓扑更紧凑（边界/重复减少），但仍开洞非水密。
+    """
+    vertices = np.asarray(vertices, dtype=np.float64).reshape(-1, 3)
+    faces = np.asarray(faces, dtype=np.int64).reshape(-1, 3)
+    if tol is None or tol <= 0 or len(vertices) == 0:
+        return vertices, faces, (None if colors is None else np.asarray(colors))
+    if colors is not None:
+        colors = np.asarray(colors)
+
+    keys = np.round(vertices / tol).astype(np.int64)
+    # 三维整数坐标 → 单键（限幅避免溢出，实际坐标量级内安全）
+    off = keys.min(axis=0)
+    k = keys - off
+    span = max(int(k.max()) + 1, 1)
+    flat = (k[:, 0].astype(np.int64) * span + k[:, 1]) * span + k[:, 2]
+    uniq, inv = np.unique(flat, return_inverse=True)
+    n_new = len(uniq)
+    summed = np.zeros((n_new, 3))
+    np.add.at(summed, inv, vertices)
+    counts = np.bincount(inv, minlength=n_new)
+    new_v = summed / counts[:, None]
+    new_c = None
+    if colors is not None:
+        cd = colors.astype(np.float64)
+        summed_c = np.zeros((n_new, cd.shape[1]))
+        np.add.at(summed_c, inv, cd)
+        mean_c = summed_c / counts[:, None]
+        new_c = mean_c.round().astype(colors.dtype)
+
+    new_f = inv[faces]                              # (M,3) 重映射
+    degen = (new_f[:, 0] == new_f[:, 1]) | (new_f[:, 1] == new_f[:, 2]) | (new_f[:, 0] == new_f[:, 2])
+    new_f = new_f[~degen]
+    return new_v, new_f.astype(np.int64), new_c
