@@ -95,6 +95,7 @@ function openAsset(folder, title) {
   destroyViewer(); current = null; es && es.close();
   $('#cur').textContent = '· 资源模型：' + title;
   buildStageRows(); $('#log').textContent = '';
+  $('#quality').style.display = 'none'; $('#qbody').innerHTML = '';
   const box = $('#viewer'); const h = $('#vhint'); if (h) h.style.display = 'none';
   let fr = box.querySelector('iframe.asset');
   if (!fr) { fr = document.createElement('iframe'); fr.className = 'asset'; fr.style.cssText = 'width:100%;height:100%;border:0;border-radius:10px;background:#0b0d12'; box.appendChild(fr); }
@@ -119,6 +120,7 @@ function selectTask(id) {
   $('#cur').textContent = '· ' + id;
   $('#log').textContent = '';
   $('#dl').innerHTML = '';
+  $('#quality').style.display = 'none'; $('#qbody').innerHTML = '';
   buildStageRows();
   showHint('正在建立实时连接…');
   const setBar = (s, pct, cls) => {
@@ -165,7 +167,25 @@ async function loadTaskArtifacts(id) {
     a.textContent = '⬇ ' + p;
     dl.appendChild(a);
   });
+  renderQuality(t.quality);
   if ((t.artifacts || []).includes('texture/model.glb')) loadViewer(`/api/tasks/${id}/file?path=texture/model.glb`);
+}
+
+/* ---------- 质量自检（FR-09/FR-10） ---------- */
+function renderQuality(q) {
+  const card = $('#quality'), body = $('#qbody'), meta = $('#qmeta');
+  body.innerHTML = '';
+  if (!q) { card.style.display = 'none'; return; }
+  const warnings = q.warnings || [], advice = q.advice || [];
+  meta.textContent = warnings.length ? `${warnings.length} 条警告` : '无警告';
+  if (!warnings.length && !advice.length) {
+    const li = document.createElement('li');
+    li.className = 'qok'; li.textContent = '✔ 质量检查通过，无警告与补拍建议';
+    body.appendChild(li);
+  }
+  warnings.forEach((w) => { const li = document.createElement('li'); li.className = 'warn'; li.textContent = '⚠ ' + w; body.appendChild(li); });
+  advice.forEach((a) => { const li = document.createElement('li'); li.className = 'advice'; li.textContent = '💡 ' + a; body.appendChild(li); });
+  card.style.display = '';
 }
 
 function showHint(html) {

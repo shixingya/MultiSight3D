@@ -114,3 +114,15 @@ def test_report_endpoint(client):
     assert set(["warnings", "advice", "stages"]) <= set(rep)
     # 未知任务 → 404
     assert c.get("/api/tasks/nope/report").status_code == 404
+
+
+def test_webui_quality_wiring(client):
+    """前端契约回归：结果页质量卡片（FR-10）挂载点与渲染接线不得被误删。"""
+    c, _ = client
+    html = c.get("/").text
+    assert 'id="quality"' in html and 'id="qbody"' in html
+    js = c.get("/app.js")
+    assert js.status_code == 200
+    body = js.text
+    assert "renderQuality" in body and "t.quality" in body   # 消费后端 quality 字段
+    assert "q.warnings" in body and "q.advice" in body        # 渲染警告与建议

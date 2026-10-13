@@ -40,6 +40,11 @@
   .hint { position:absolute; inset:0; display:grid; place-items:center; color:var(--dim); font-size:13px; text-align:center; padding:20px; }
   .dl { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
   .dl a { color:var(--acc); text-decoration:none; border:1px solid var(--line); border-radius:8px; padding:5px 12px; font-size:13px; }
+  .qlist { list-style:none; display:flex; flex-direction:column; gap:6px; }
+  .qlist li { font-size:13px; padding:8px 10px; border-radius:8px; border:1px solid var(--line); }
+  .qlist li.warn { color:var(--bad); background:#1a1214; }
+  .qlist li.advice { color:var(--text); background:#101822; }
+  .qok { color:var(--ok); font-size:13px; }
   .right { display:flex; flex-direction:column; gap:18px; }
   .cols { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
   @media (max-width:900px){ main{grid-template-columns:1fr;} .cols{grid-template-columns:1fr;} }
@@ -88,6 +93,10 @@
         <div id="viewer"><div class="hint" id="vhint">完成重建后在此预览 GLB<br />（首次需联网加载 three.js）</div></div>
         <div class="dl" id="dl"></div>
       </div>
+    </div>
+    <div class="card" id="quality" style="display:none">
+      <h2>质量自检 <small id="qmeta" style="color:var(--dim);text-transform:none"></small></h2>
+      <ul class="qlist" id="qbody"></ul>
     </div>
     <div class="card">
       <h2>说明</h2>
