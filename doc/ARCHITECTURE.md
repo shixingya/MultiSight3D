@@ -191,7 +191,7 @@ Butian3D 前端资产：ReconScene 资产加载位、SSE token 方案）。
 | --- | --- | --- |
 | v0.1 | 骨架 + 自研 SfM（特征/匹配/增量注册/结构增长/BA） | `sfm/`（纯 numpy 全链已落地，含逐帧结构增长）；`stages/sfm.Real` 替换点；`_synth` 的 COLMAP 目录即目标落盘格式 |
 | v0.2 | 学习型 MVS + PatchMatch 兜底 | `mvs/`（平面扫描深度图 + 反投影融合 + `colmap_io` 读取）已接线 `stages/mvs.Real`（逐视图扫描→跨视图置信融合去重→fusion.ply）；学习型/PatchMatch 高档与设备探测待做 |
-| v0.3 | 网格 + 纹理烘焙 | `mesh.Real` / `texture.Real`；`_synth.write_glb_*` 替换为真实烘焙产物 |
+| v0.3 | 网格 + 纹理烘焙 | `mvs/meshify.depth_map_to_mesh`（距离图像网格化基元：规则深度图→世界系三角网格、无效角点留洞、`max_edge_gap` 抑制深度断裂假面，纯 numpy）已就位并单测；**尚未接线 `stages/mesh.Real`**（需 MVS 落盘逐视图深度图或持久化中间产物），跨视图统一网格/Poisson 为后续 |
 | v0.4 | 报告/归因/补拍建议/账号隔离 | `report` 已聚合指标与警告；FR-16 加 `server/routes` 鉴权层 |
 | v1.0 | 打磨发布 + Docker | `Dockerfile` 待补；CI 双 OS 矩阵已就位 |
 

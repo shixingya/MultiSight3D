@@ -14,5 +14,7 @@ from __future__ import annotations
 
 from .depth import plane_sweep_depth
 from .fuse import depth_map_to_points, remove_scatter_noise
+from .meshify import depth_map_to_mesh
 
-__all__ = ["plane_sweep_depth", "depth_map_to_points", "remove_scatter_noise"]
+__all__ = ["plane_sweep_depth", "depth_map_to_points", "remove_scatter_noise",
+           "depth_map_to_mesh"]
