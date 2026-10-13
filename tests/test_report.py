@@ -70,3 +70,29 @@ def test_healthy_stats_no_warning(tmp_path):
 def test_sfm_register_rate_warning(tmp_path):
     report = _run(_ws(tmp_path), sfm={"register_rate": 0.5})
     assert any("注册率" in w for w in report["warnings"])
+
+
+def test_retake_advice_from_signals(tmp_path):
+    ws = _ws(tmp_path)
+    ws.file("images", "list.json").write_text(json.dumps(
+        {"count": 8, "sharp_count": 6, "warnings": []}), encoding="utf-8")
+    ws.file("sfm", "stats.json").write_text(json.dumps({"register_rate": 0.7}), encoding="utf-8")
+    ws.file("mvs", "stats.json").write_text(json.dumps({"dense_points": MVS_MIN_DENSE - 50}), encoding="utf-8")
+    ReportStage().run(_ctx(ws))
+    report = json.loads((ws.root / "report" / "report.json").read_text(encoding="utf-8"))
+    joined = "\n".join(report["advice"])
+    assert "环形再补" in joined and "15°" in joined      # 照片不足→方位/重叠建议
+    assert "模糊" in joined                              # 有模糊→清晰度建议
+    assert "注册率" in joined and "60~80%" in joined      # 低注册率→重叠度建议
+    assert "稠密点稀疏" in joined                          # 稀疏云→MVS 补拍建议
+
+
+def test_healthy_inputs_no_retake_advice(tmp_path):
+    ws = _ws(tmp_path)
+    ws.file("images", "list.json").write_text(json.dumps(
+        {"count": 40, "sharp_count": 40, "warnings": []}), encoding="utf-8")
+    ws.file("sfm", "stats.json").write_text(json.dumps({"register_rate": 0.98}), encoding="utf-8")
+    ws.file("mvs", "stats.json").write_text(json.dumps({"dense_points": 60_000}), encoding="utf-8")
+    ReportStage().run(_ctx(ws))
+    report = json.loads((ws.root / "report" / "report.json").read_text(encoding="utf-8"))
+    assert report["advice"] == []

@@ -192,7 +192,7 @@ Butian3D 前端资产：ReconScene 资产加载位、SSE token 方案）。
 | v0.1 | 骨架 + 自研 SfM（特征/匹配/增量注册/结构增长/BA） | `sfm/`（纯 numpy 全链已落地，含逐帧结构增长）；`stages/sfm.Real` 替换点；`_synth` 的 COLMAP 目录即目标落盘格式 |
 | v0.2 | 学习型 MVS + PatchMatch 兜底 | `mvs/`（平面扫描深度图 + 反投影融合 + `colmap_io` 读取）已接线 `stages/mvs.Real`（逐视图扫描→跨视图置信融合去重→fusion.ply）；学习型/PatchMatch 高档与设备探测待做 |
 | v0.3 | 网格 + 纹理烘焙 | `mvs/meshify.depth_map_to_mesh`（距离图像网格化基元：规则深度图→世界系三角网格、无效角点留洞、`max_edge_gap` 抑制深度断裂假面，纯 numpy）**已接线 `stages/mesh.Real`**（MVS 逐视图落盘 mvs/depthmaps/*.npz → 网格化→跨视图拼接（顶点带真彩色）→mesh.obj）；`stages/texture.Real` 已接线（`_synth.read_obj_trimesh` 读 mesh.obj → 泛化 `assets.glb.write_glb` 写 COLOR_0 顶点色 model.glb，无 UV 烘焙；ARTIFACTS[texture] 改为仅要求 model.glb，见 doc/DECISIONS.md D-001）；真实 UV 展开/多视图纹理烘焙/跨视图统一缝合/Poisson 为后续 |
-| v0.4 | 报告/归因/补拍建议/账号隔离 | `report` 已聚合 sfm/mvs/mesh/texture 各阶段 `stats.json` 进 report.json，并对下游质量施阈（稠密点 < `MVS_MIN_DENSE`、面数 < `MESH_MIN_FACES` 且确有真实 stats 时才告警，mock 空 stats 不误报）；真实引擎 sfm→mvs→mesh→texture 端到端回归见 `tests/test_pipeline_real_e2e.py`；FR-16 加 `server/routes` 鉴权层为后续 |
+| v0.4 | 报告/归因/补拍建议/账号隔离 | `report` 已聚合 sfm/mvs/mesh/texture 各阶段 `stats.json` 进 report.json，并对下游质量施阈（稠密点 < `MVS_MIN_DENSE`、面数 < `MESH_MIN_FACES` 且确有真实 stats 时才告警，mock 空 stats 不误报）；真实引擎 sfm→mvs→mesh→texture 端到端回归见 `tests/test_pipeline_real_e2e.py`；FR-11 拍摄引导已基于信号（照片数不足/模糊/低注册率/稠密点稀疏）输出具体可执行补拍建议（方位环形补拍·重叠 60~80%·清晰度）写入 report.advice；FR-16 加 `server/routes` 鉴权层为后续 |
 | v1.0 | 打磨发布 + Docker | `Dockerfile` 待补；CI 双 OS 矩阵已就位 |
 
 ## 9. 测试策略
