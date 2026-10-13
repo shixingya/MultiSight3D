@@ -43,6 +43,8 @@ def test_real_mvs_produces_dense_cloud(tmp_path):
     assert stats["engine"] == "real/planesweep"
     assert stats["dense_points"] > 0
     assert stats["reference_views"] >= 2
+    # 供 v0.3 mesh 网格化的逐视图深度图中间产物已落盘
+    assert list((ws.root / "mvs" / "depthmaps").glob("*.npz"))
 
     # fusion.ply 头部与点数据一致、坐标有限；带真彩色 rgb 列
     lines = (ws.root / "mvs" / "fusion.ply").read_text(encoding="ascii").splitlines()

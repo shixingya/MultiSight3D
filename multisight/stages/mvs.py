@@ -89,6 +89,7 @@ class Real(Stage):
         all_col: list[np.ndarray] = []
         steps: list[float] = []
         bounds_all: list[tuple[float, float]] = []
+        dm_dir = ctx.ws.dir("mvs", "depthmaps")         # 逐视图深度图中间产物（供 v0.3 mesh 网格化）
         for vi, (name, Rv, tv) in enumerate(refs):
             # 逐视图鲁棒定标深度区间（稀疏点投影到本视图的正深度）：不同视图到表面的
             # 距离不同，各自取区间才能用有限采样数获得足够深度分辨率。
@@ -129,6 +130,10 @@ class Real(Stage):
                 vv = np.clip(vs.ravel()[mask].astype(int), 0, h - 1)
                 all_pts.append(pts)
                 all_col.append(ref_rgb[vv, uu])                        # 真彩色采样（非灰度）
+                # 落盘本视图被采纳的深度图（仅保留达 MIN_CONF/MAX_COST 的像素）供网格化
+                accepted = np.isfinite(dmap) & (conf >= self.MIN_CONF) & (cost <= self.MAX_COST)
+                np.savez(dm_dir / f"view{vi:03d}.npz", name=name, K=K, R=Rv, t=tv,
+                         us=us, vs=vs, depth=np.where(accepted, dmap, np.nan))
             ctx.progress(self.name, 10 + int(80 * (vi + 1) / len(refs)),
                          f"视图 {vi + 1}/{len(refs)}：累计稠密点 {sum(len(p) for p in all_pts)}")
 
