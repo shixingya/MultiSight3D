@@ -14,7 +14,7 @@ import json
 import numpy as np
 
 from ..pipeline import Stage, StageContext
-from ..mvs import analyze_mesh_topology, depth_map_to_mesh
+from ..mvs import analyze_mesh_topology, depth_map_to_mesh, mesh_metrics
 from ._synth import write_obj_cube, write_obj_trimesh, write_ply_mesh
 from ._synth import _CUBE_V, _CUBE_F
 
@@ -78,6 +78,7 @@ class Real(Stage):
         write_obj_trimesh(ctx.ws.file("mesh", "mesh.obj"), V, F, colors=colors)
         write_ply_mesh(ctx.ws.file("mesh", "mesh.ply"), V, F, colors=colors)
         topo = analyze_mesh_topology(V, F)
+        met = mesh_metrics(V, F)
         ctx.progress(self.name, 100, f"网格重建完成：{len(V)} 顶点 / {len(F)} 三角形（水密={topo['is_watertight']}，边界边={topo['boundary_edges']}）")
         (ctx.ws.root / "mesh" / "stats.json").write_text(json.dumps({
             "engine": "real/range-image-mesh",
@@ -90,6 +91,9 @@ class Real(Stage):
             "boundary_edges": topo["boundary_edges"],
             "non_manifold_edges": topo["non_manifold_edges"],
             "euler_characteristic": topo["euler_characteristic"],
+            "area": met["area"],
+            "volume_abs": met["volume_abs"],
+            "bbox_extent": met["bbox_extent"],
             "note": "v0.3 起步：逐视图距离图像网格化直接拼接（顶点带参考视图真彩色）；跨视图统一缝合/泊松重建为后续里程碑（拼接网格典型为开洞非水密）",
         }, ensure_ascii=False, indent=2), encoding="utf-8")
 

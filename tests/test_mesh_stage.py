@@ -54,6 +54,11 @@ def test_real_mesh_from_depthmap(tmp_path):
     assert stats["faces"] == 2 * (hs - 1) * (ws_n - 1)
     assert stats["vertices"] == hs * ws_n
     assert stats["vertex_colors"] is True
+    # FR-08/FR-09 尺寸度量：平面网格面积>0；体积/bbox 均落盘（平面有向体积近 0）
+    assert stats["area"] > 0
+    assert "volume_abs" in stats and len(stats["bbox_extent"]) == 3
+    ex, ey, ez = stats["bbox_extent"]
+    assert ex > 0 and ey > 0 and abs(ez) < 1e-9            # 单平面：z 无展幅
 
     lines = (ws.root / "mesh" / "mesh.obj").read_text(encoding="ascii").splitlines()
     vlines = [ln for ln in lines if ln.startswith("v ")]

@@ -36,7 +36,12 @@ def _fmt_stats_line(sfm: dict, mvs: dict, mesh: dict, tex: dict) -> str:
         parts.append(f"稠密 {mvs['dense_points']} 点")
     if mesh and mesh.get("faces") is not None:
         wt = "水密" if mesh.get("watertight") else "开洞"
-        parts.append(f"网格 {mesh.get('vertices', '?')}v/{mesh['faces']}f（{wt}）")
+        seg = f"网格 {mesh.get('vertices', '?')}v/{mesh['faces']}f（{wt}）"
+        if mesh.get("area"):
+            seg += f"·面积 {mesh['area']:.2f}"
+        if mesh.get("volume_abs"):
+            seg += f"·体积 {mesh['volume_abs']:.2f}"
+        parts.append(seg)
     if tex and tex.get("bbox_extent"):
         e = "×".join(f"{v:.2f}" for v in tex["bbox_extent"])
         parts.append(f"GLB {tex.get('triangles', '?')} 面·尺寸 {e}")
