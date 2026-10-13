@@ -48,6 +48,10 @@ def test_real_texture_glb_with_color(tmp_path):
     assert stats["engine"] == "real/vertex-color-glb"
     assert stats["vertices"] == 4 and stats["triangles"] == 2
     assert stats["vertex_colors"] is True
+    # FR-08 尺寸估计：顶点集包围盒（此夹具 x/y 0~1、z=0）
+    assert stats["bbox_min"] == [0.0, 0.0, 0.0]
+    assert stats["bbox_max"] == [1.0, 1.0, 0.0]
+    assert stats["bbox_extent"] == [1.0, 1.0, 0.0]
 
     data = (ws.root / "texture" / "model.glb").read_bytes()
     assert data[:4] == b"glTF" and int.from_bytes(data[4:8], "little") == 2

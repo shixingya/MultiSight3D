@@ -11,8 +11,21 @@ from __future__ import annotations
 
 import json
 
+import numpy as np
+
 from ..pipeline import Stage, StageContext
 from ._synth import write_checker_texture, write_glb_cube, read_obj_trimesh
+
+
+def _bbox(positions):
+    """顶点集包围盒：返回 (min[3], max[3], extent[3])，保留 4 位小数（世界单位）。"""
+    p = np.asarray(positions, dtype=np.float64)
+    if len(p) == 0:
+        return [0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]
+    lo, hi = p.min(axis=0), p.max(axis=0)
+    return ([round(float(v), 4) for v in lo],
+            [round(float(v), 4) for v in hi],
+            [round(float(v), 4) for v in (hi - lo)])
 
 
 class Mock(Stage):
@@ -45,10 +58,14 @@ class Real(Stage):
         write_glb(ctx.ws.file("texture", "model.glb"), positions, indices,
                   colors=colors, name="reconstruction", z_up=False)
         ctx.progress(self.name, 100, "GLB 直出完成：texture/model.glb")
+        bbox_min, bbox_max, extent = _bbox(positions)
         (ctx.ws.root / "texture" / "stats.json").write_text(json.dumps({
             "engine": "real/vertex-color-glb",
             "vertices": int(len(positions)),
             "triangles": int(len(indices) // 3),
             "vertex_colors": colors is not None,
-            "note": "v0.3 起步：逐顶点真彩色 GLB（无 UV）；UV 展开/多视图纹理烘焙为后续里程碑",
+            "bbox_min": bbox_min,
+            "bbox_max": bbox_max,
+            "bbox_extent": extent,
+            "note": "v0.3 起步：逐顶点真彩色 GLB（无 UV）；坐标为 SfM 世界系（尺度/朝向未对齐重力，bbox 为世界单位尺寸估计）；UV 展开/多视图纹理烘焙为后续里程碑",
         }, ensure_ascii=False, indent=2), encoding="utf-8")
