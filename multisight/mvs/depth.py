@@ -117,9 +117,8 @@ def plane_sweep_depth(ref_gray, src_grays, K: np.ndarray, ref_RT, src_RTs,
     S = flat_u.size
     D = depths.size
 
-    best_cost = np.full(S, np.inf)
-    best_depth = np.full(S, np.nan)
-    best_conf = np.zeros(S)
+    cost_all = np.full((S, D), np.inf)
+    conf_all = np.zeros((S, D))
     for di, d in enumerate(depths):
         # 参考相机视线深度 d 处的世界点：Xc = d·ray → W = Rᵀ(Xc - t)
         Xc = rays * d
@@ -141,12 +140,31 @@ def plane_sweep_depth(ref_gray, src_grays, K: np.ndarray, ref_RT, src_RTs,
             costs[idx] += c[ok]
             seen[idx] += 1.0
         avg = np.where(seen > 0, costs / np.maximum(seen, 1e-9), np.inf)
-        better = (seen > best_conf) | ((seen == best_conf) & (avg < best_cost))
-        best_cost = np.where(better, avg, best_cost)
-        best_depth = np.where(better, d, best_depth)
-        best_conf = np.where(better, seen, best_conf)
+        cost_all[:, di] = avg
+        conf_all[:, di] = seen
 
-    valid = (best_cost < max_cost) & (best_conf >= 1)
+    # 每像素取可见邻视图最多、代价最小的深度网格点（conf 优先，再比 cost）
+    masked = np.where(conf_all >= 1, cost_all, np.inf)
+    best_i = np.argmin(masked, axis=1)
+    best_cost = masked[np.arange(S), best_i]
+    best_conf = conf_all[np.arange(S), best_i]
+    best_depth = depths[best_i].astype(np.float64)
+    # 亚像素精化：对最优点及其左右代价做抛物线拟合（仅当两邻点均可见且曲率为正）
+    if D >= 3:
+        step = float(depths[1] - depths[0])
+        interior = (best_i > 0) & (best_i < D - 1)
+        im = np.where(interior, best_i, 0)
+        cm = masked[np.arange(S), im - 1]
+        c0 = masked[np.arange(S), im]
+        cp = masked[np.arange(S), im + 1]
+        with np.errstate(invalid="ignore"):
+            denom = cm - 2 * c0 + cp
+        good = interior & (denom > 1e-12) & np.isfinite(cm) & np.isfinite(cp)
+        offset = np.zeros(S)
+        offset[good] = np.clip(0.5 * (cm[good] - cp[good]) / denom[good], -0.5, 0.5)
+        best_depth = best_depth + offset * step
+
+    valid = (best_cost < max_cost) & (best_conf >= 1) & np.isfinite(best_depth)
     depth_out = np.where(valid, best_depth, np.nan).reshape(shape)
     cost_out = np.where(valid, best_cost, np.inf).reshape(shape)
     conf_out = best_conf.reshape(shape)

@@ -65,7 +65,11 @@ def test_plane_sweep_recovers_known_depth():
     valid = np.isfinite(dmap)
     assert valid.mean() > 0.4                           # 多数带纹理像素应被恢复
     err = np.abs(dmap[valid] - d0)
-    assert np.median(err) <= 0.2                        # 恢复到真值附近（~4% 相对精度，含采样量化误差）
+    assert np.median(err) <= 0.2                        # 恢复到真值附近（合成渲染取整主导残余偏差）
+    # 亚像素：相当比例的深度应落在采样网格之间（连续值）而非均为网格点
+    step = depths[1] - depths[0]
+    off_grid = np.abs((dmap[valid] - d0) / step - np.round((dmap[valid] - d0) / step)) > 1e-4
+    assert off_grid.mean() > 0.3
 
 
 def test_depth_map_to_points_backprojects_to_plane():
