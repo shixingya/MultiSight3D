@@ -76,6 +76,32 @@ def write_obj_trimesh(path: Path, verts: np.ndarray, faces: np.ndarray, name: st
     path.write_text("\n".join(out) + "\n", encoding="ascii")
 
 
+def read_obj_trimesh(path: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray | None]:
+    """读 OBJ 三角网格：返回 (positions (N,3), indices (M,) 0-based, colors (N,3) uint8 或 None)。
+    兼容 `v x y z [r g b]`（色归 0~1 → 回乘 255）与多边形面（扇形三角剖分）、`f a/b/c` 组索。"""
+    verts: list = []
+    cols: list = []
+    idx: list = []
+    has_color = False
+    for ln in Path(path).read_text(encoding="ascii").splitlines():
+        if ln.startswith("v "):
+            p = ln.split()
+            verts.append([float(p[1]), float(p[2]), float(p[3])])
+            if len(p) >= 6:
+                has_color = True
+                cols.append([float(p[4]), float(p[5]), float(p[6])])
+            else:
+                cols.append([0.0, 0.0, 0.0])
+        elif ln.startswith("f "):
+            tri = [int(tok.split("/")[0]) - 1 for tok in ln.split()[1:]]
+            for k in range(1, len(tri) - 1):                # 扇形剖分（三角面时仅一次）
+                idx.extend([tri[0], tri[k], tri[k + 1]])
+    colors = None
+    if has_color:
+        colors = (np.asarray(cols, dtype=np.float64) * 255.0).clip(0, 255).astype(np.uint8)
+    return (np.asarray(verts, dtype=np.float64), np.asarray(idx, dtype=np.int64), colors)
+
+
 # ---------- GLB（glTF 2.0 二进制单文件） ----------
 
 def write_glb_cube(path: Path) -> None:

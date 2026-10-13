@@ -24,8 +24,9 @@ def _axis_to_yup(positions: np.ndarray) -> np.ndarray:
 
 def write_glb(path: Path | str, positions, indices, *,
               uvs=None, texture_png: Path | str | None = None,
-              name: str = "asset", z_up: bool = True) -> Path:
-    """写 .glb。positions:(N,3) float；indices:(M,) int；uvs:(N,2) 可选。"""
+              colors=None, name: str = "asset", z_up: bool = True) -> Path:
+    """写 .glb。positions:(N,3) float；indices:(M,) int；uvs:(N,2) 可选；
+    colors:(N,3) 可选逐顶点色（uint8 0~255 或 float 0~1 → 归一后写 COLOR_0）。"""
     pos = np.asarray(positions, dtype="<f4")
     if z_up and len(pos):
         pos = np.ascontiguousarray(_axis_to_yup(np.asarray(positions, dtype=np.float64)).astype("<f4"))
@@ -57,6 +58,14 @@ def write_glb(path: Path | str, positions, indices, *,
                       "type": "SCALAR"})
 
     attributes = {"POSITION": 0}
+    if colors is not None and len(np.asarray(colors)):
+        col = np.asarray(colors, dtype=np.float64)
+        if col.max() > 1.5:                              # 视为 0~255 整数色 → 归一
+            col = col / 255.0
+        col_view = _add_view(col.astype("<f4").tobytes(), 34962)
+        accessors.append({"bufferView": col_view, "componentType": 5126,
+                          "count": len(col), "type": "VEC3"})
+        attributes["COLOR_0"] = len(accessors) - 1
     if uvs is not None and len(uvs):
         uv = np.asarray(uvs, dtype="<f4")
         uv_view = _add_view(uv.tobytes(), 34962)
@@ -69,6 +78,11 @@ def write_glb(path: Path | str, positions, indices, *,
     material: dict = {"name": name, "pbrMetallicRoughness":
                       {"baseColorFactor": [0.8, 0.8, 0.85, 1.0],
                        "metallicFactor": 0.0, "roughnessFactor": 0.8}}
+    if colors is not None and "COLOR_0" in attributes and not texture_png:
+        # 顶点色需与白底 baseColor 相乘才能原色显示（默认灰底会压暗）
+        material = {"name": name, "pbrMetallicRoughness":
+                    {"baseColorFactor": [1.0, 1.0, 1.0, 1.0],
+                     "metallicFactor": 0.0, "roughnessFactor": 0.8}}
     if texture_png and Path(texture_png).is_file():
         blob = Path(texture_png).read_bytes()
         tex_view = _add_view(blob, 0)

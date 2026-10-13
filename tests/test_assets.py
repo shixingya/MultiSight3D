@@ -168,6 +168,24 @@ def test_write_glb_magic(tmp_path):
     assert json_len % 4 == 0
 
 
+def test_write_glb_vertex_colors(tmp_path):
+    positions = [(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0)]
+    indices = [0, 1, 2, 0, 2, 3]
+    colors = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0)]
+    p = write_glb(tmp_path / "c.glb", positions, indices, colors=colors, name="quad", z_up=False)
+    data = p.read_bytes()
+    assert data[:4] == b"glTF"
+    json_len = struct.unpack_from("<I", data, 12)[0]
+    import json as _json
+    gltf = _json.loads(data[20:20 + json_len].decode("utf-8").rstrip())
+    prim = gltf["meshes"][0]["primitives"][0]
+    assert "COLOR_0" in prim["attributes"]
+    acc = gltf["accessors"][prim["attributes"]["COLOR_0"]]
+    assert acc["count"] == 4 and acc["type"] == "VEC3"
+    assert prim["indices"] == 1                          # 索引访问器位置不变（向后兼容）
+    assert gltf["materials"][0]["pbrMetallicRoughness"]["baseColorFactor"][0] == 1.0
+
+
 # ---------------------------------------------------------------- server 接口
 
 def test_server_asset_endpoints(asset_dir, tmp_path):
