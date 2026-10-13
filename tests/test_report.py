@@ -8,7 +8,7 @@ import pytest
 
 from multisight.events import Bus
 from multisight.pipeline import StageContext
-from multisight.stages.report import MESH_MIN_FACES, MVS_MIN_DENSE, Mock as ReportStage
+from multisight.stages.report import MESH_MIN_FACES, MVS_MIN_DENSE, REPROJ_MAX_PX, Mock as ReportStage
 from multisight.workspace import Workspace
 
 pytest.importorskip("numpy")
@@ -70,6 +70,23 @@ def test_healthy_stats_no_warning(tmp_path):
 def test_sfm_register_rate_warning(tmp_path):
     report = _run(_ws(tmp_path), sfm={"register_rate": 0.5})
     assert any("注册率" in w for w in report["warnings"])
+
+
+def test_high_reproj_warning(tmp_path):
+    report = _run(_ws(tmp_path), sfm={"register_rate": 1.0, "mean_reproj_px": REPROJ_MAX_PX + 1})
+    assert any("重投影误差" in w for w in report["warnings"])
+
+
+def test_median_reproj_key_also_checked(tmp_path):
+    # mock 用 median_reproj_px；低值不应告警
+    report = _run(_ws(tmp_path), sfm={"register_rate": 1.0, "median_reproj_px": 0.7})
+    assert not any("重投影误差" in w for w in report["warnings"])
+
+
+def test_null_reproj_no_warning(tmp_path):
+    # 真实档重投影不可估计（None）→ 不误报
+    report = _run(_ws(tmp_path), sfm={"register_rate": 1.0, "mean_reproj_px": None})
+    assert not any("重投影误差" in w for w in report["warnings"])
 
 
 def test_open_mesh_watertight_warning(tmp_path):

@@ -47,7 +47,8 @@ class Mock(Stage):
         (ctx.ws.root / "sfm" / "stats.json").write_text(json.dumps({
             "registered": n, "total": n, "register_rate": register_rate,
             "sparse_points": int(len(pts)),
-            "median_reproj_px": 0.7,  # mock 值
+            "mean_reproj_px": 0.7,      # mock 值（与 real 键名统一，供 report 消费）
+            "median_reproj_px": 0.7,    # mock 值
         }), encoding="utf-8")
 
 

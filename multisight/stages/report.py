@@ -14,6 +14,7 @@ from .preprocess import MIN_RECOMMENDED
 # 下游质量阈：低于此值提示重建可能稀疏/有洞（仅对真实 stats 生效，合成小场景不适用）
 MVS_MIN_DENSE = 200
 MESH_MIN_FACES = 100
+REPROJ_MAX_PX = 1.5          # 稀疏重投影误差超此像素值提示几何拟合欠佳
 
 
 def _read_json(path):
@@ -61,6 +62,11 @@ class Mock(Stage):
             advice.append(f"阶段 {failed[0]} 失败：修复输入后可用 --resume 从断点续跑，已完成产物未清空")
         if sfm_stats and sfm_stats.get("register_rate", 1) < 0.85:
             warnings.append(f"照片注册率 {sfm_stats['register_rate']:.0%} < 85%，检查重叠度与模糊照片")
+        reproj = sfm_stats.get("mean_reproj_px") if sfm_stats else None
+        if reproj is None and sfm_stats:
+            reproj = sfm_stats.get("median_reproj_px")
+        if reproj is not None and reproj > REPROJ_MAX_PX:
+            warnings.append(f"稀疏重投影误差 {reproj:.2f}px > {REPROJ_MAX_PX}px，位姿/结构拟合欠佳；建议补拍清晰、高重叠照片或降低镜头畸变")
         # 下游质量阈值警告（仅当对应阶段有真实 stats 产物时触发；mock 不写 stats 故为空 dict，不误报）
         if mvs_stats and mvs_stats.get("dense_points", 0) < MVS_MIN_DENSE:
             warnings.append(f"稠密点云仅 {mvs_stats.get('dense_points', 0)} 点（<{MVS_MIN_DENSE}），重建可能稀疏/有洞；增加照片或改善纹理/重叠")
