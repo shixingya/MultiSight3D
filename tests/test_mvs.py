@@ -10,7 +10,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from multisight.mvs import plane_sweep_depth, depth_map_to_points, remove_scatter_noise, voxel_downsample
+from multisight.mvs import plane_sweep_depth, depth_map_to_points, remove_scatter_noise, voxel_downsample, point_cloud_metrics
 
 
 def _K(W=80, H=64, focal=120.0):
@@ -169,3 +169,21 @@ def test_voxel_downsample_noop_empty_and_nonpositive():
     assert len(out) == len(P)
     out2, _ = voxel_downsample(P, voxel=-1.0)
     assert np.array_equal(out2, P)
+
+
+def test_point_cloud_metrics_box_8corners():
+    # 轴对齐长方体 8 角点（中心原点）：x±1, y±2, z±3
+    P = np.array([[sx, sy, sz] for sx in (-1, 1) for sy in (-2, 2) for sz in (-3, 3)], float)
+    m = point_cloud_metrics(P)
+    assert m["count"] == 8
+    assert m["centroid"] == pytest.approx([0.0, 0.0, 0.0], abs=1e-9)
+    assert m["bbox_extent"] == pytest.approx([2.0, 4.0, 6.0], abs=1e-9)
+    # np.cov 默认 ddof=1：沿轴方差 = N/(N-1)*[1,4,9] → 标准差升序
+    exp = np.sqrt(8 / 7) * np.array([1.0, 2.0, 3.0])
+    assert m["pca_std"] == pytest.approx(list(exp), abs=1e-6)
+    assert m["pca_std"] == sorted(m["pca_std"])          # 升序
+
+
+def test_point_cloud_metrics_empty():
+    m = point_cloud_metrics(np.zeros((0, 3)))
+    assert m["count"] == 0 and m["bbox_extent"] == [0.0, 0.0, 0.0] and m["pca_std"] == [0.0, 0.0, 0.0]

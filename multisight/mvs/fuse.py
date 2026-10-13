@@ -107,3 +107,26 @@ def voxel_downsample(points, *, voxel: float, colors=None):
     if C.dtype == np.uint8:
         cd = np.round(cd).astype(np.uint8)
     return out, cd
+
+
+def point_cloud_metrics(points):
+    """稠密点云尺寸度量（FR-05/FR-08，纯 numpy）。
+
+    centroid 质心；bbox_extent 轴对齐盒展幅；pca_std 沿三个主轴的标准差（协方差矩阵
+    特征值平方根，升序）——与坐标轴无关地反映点云真实伸展/扁平程度。返回 dict；
+    空点云给诚实零值（count=0）。"""
+    P = np.asarray(points, dtype=np.float64)
+    n = P.shape[0] if P.size else 0
+    if n == 0:
+        return {"count": 0, "centroid": [0.0, 0.0, 0.0],
+                "bbox_extent": [0.0, 0.0, 0.0], "pca_std": [0.0, 0.0, 0.0]}
+    P = P.reshape(-1, 3)
+    centroid = P.mean(axis=0)
+    bbox_extent = P.max(axis=0) - P.min(axis=0)
+    cov = np.cov((P - centroid).T)                      # 3x3 协方差
+    eig = np.linalg.eigvalsh(np.atleast_2d(cov))        # 升序特征值
+    pca_std = np.sqrt(np.clip(eig, 0.0, None))
+    return {"count": int(n),
+            "centroid": [round(float(x), 6) for x in centroid],
+            "bbox_extent": [round(float(x), 6) for x in bbox_extent],
+            "pca_std": [round(float(x), 6) for x in pca_std]}
