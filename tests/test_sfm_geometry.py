@@ -225,3 +225,18 @@ def test_matrix_to_quat_roundtrip():
 
 def test_matrix_to_quat_identity():
     assert matrix_to_quat(np.eye(3)) == (1.0, 0.0, 0.0, 0.0)
+
+
+def test_quat_to_matrix_inverts_matrix_to_quat():
+    from multisight.sfm import quat_to_matrix
+    R = _rot("x", np.radians(23)) @ _rot("y", np.radians(-61)) @ _rot("z", np.radians(44))
+    q = matrix_to_quat(R)
+    assert np.allclose(quat_to_matrix(q), R, atol=1e-9)     # 生产实现与 matrix_to_quat 互逆
+    assert np.allclose(quat_to_matrix([2, 0, 0, 0]), np.eye(3), atol=1e-12)  # 非单位自动归一
+
+
+def test_quat_to_matrix_rejects_zero():
+    import pytest
+    from multisight.sfm import quat_to_matrix
+    with pytest.raises(ValueError):
+        quat_to_matrix([0, 0, 0, 0])

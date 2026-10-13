@@ -176,15 +176,17 @@ Butian3D 前端资产：ReconScene 资产加载位、SSE token 方案）。
   沿视线在深度区间平面扫描，将候选 3D 点投到各邻视图、以去均值 L2 归一化互相关（NCC）度量 patch 一致性，跨邻视图平均代价取
   argmin 深度（相机约定与世界→相机 x=K(RW+t) 一致）；无邻可见/负深度/代价超阈的像素诚实标无效（depth=nan），不臆造深度。
   `fuse.depth_map_to_points`：把深度图反投影回世界点云并按置信度/代价过滤（低置信丢弃）。均经合成平面场景单测（已知深度
-  恢复到 ~4% 相对精度、反投影点 z 贴近真值、无纹理诚实降级）。多视图逐参考扫一遍再融合去重接 `stages/mvs.Real`、亚像素代价
-  抛物线精化与显存/耗时分档为后续迭代。
+  恢复到 ~4% 相对精度、反投影点 z 贴近真值、无纹理诚实降级）。**已接线 `stages/mvs.Real`**：`colmap_io` 读上游 SfM 的
+  cameras.txt/images.txt/points3D.ply（新增 `quat_to_matrix` 与 `matrix_to_quat` 互逆），由稀疏点定标全局深度区间，逐参考视图取基线
+  最近的邻视图跑平面扫描→反投影→按 MIN_CONF/MAX_COST 过滤→体素去重→稠密 fusion.ply + `stats.json`（视图不足/无稀疏点/零稠密点均诚实报错）。
+  亚像素代价抛物线精化、显存/耗时分档与学习型/PatchMatch 高档为后续迭代。
 
 ## 8. 与 PRD 里程碑映射
 
 | 里程碑 | 交付 | 代码钩子（现已就位） |
 | --- | --- | --- |
 | v0.1 | 骨架 + 自研 SfM（特征/匹配/增量注册/结构增长/BA） | `sfm/`（纯 numpy 全链已落地，含逐帧结构增长）；`stages/sfm.Real` 替换点；`_synth` 的 COLMAP 目录即目标落盘格式 |
-| v0.2 | 学习型 MVS + PatchMatch 兜底 | `mvs/`（纯 numpy 平面扫描深度图 + 反投影融合已落地并单测）；`stages/mvs.Real` 接线（逐视图扫描→融合去重）与设备探测为下一步 |
+| v0.2 | 学习型 MVS + PatchMatch 兜底 | `mvs/`（平面扫描深度图 + 反投影融合 + `colmap_io` 读取）已接线 `stages/mvs.Real`（逐视图扫描→跨视图置信融合去重→fusion.ply）；学习型/PatchMatch 高档与设备探测待做 |
 | v0.3 | 网格 + 纹理烘焙 | `mesh.Real` / `texture.Real`；`_synth.write_glb_*` 替换为真实烘焙产物 |
 | v0.4 | 报告/归因/补拍建议/账号隔离 | `report` 已聚合指标与警告；FR-16 加 `server/routes` 鉴权层 |
 | v1.0 | 打磨发布 + Docker | `Dockerfile` 待补；CI 双 OS 矩阵已就位 |

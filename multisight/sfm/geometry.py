@@ -405,3 +405,20 @@ def matrix_to_quat(R: np.ndarray) -> tuple[float, float, float, float]:
     if q[0] < 0:
         q = -q                              # 约定 w≥0，写法唯一
     return (float(q[0]), float(q[1]), float(q[2]), float(q[3]))
+
+
+def quat_to_matrix(q) -> np.ndarray:
+    """单位四元数 (w, x, y, z) → 旋转矩阵（matrix_to_quat 的逆，COLMAP 惯例）。
+
+    非单位四元数先归一化；返回的 R 满足 x_cam = R·X_world + t（世界→相机）。
+    """
+    w, x, y, z = (float(v) for v in np.asarray(q, dtype=np.float64).reshape(4))
+    n = np.hypot(np.hypot(np.hypot(w, x), y), z)
+    if n < 1e-12:
+        raise ValueError("quat_to_matrix：零四元数")
+    w, x, y, z = w / n, x / n, y / n, z / n
+    return np.array([
+        [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+        [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+        [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+    ], dtype=np.float64)

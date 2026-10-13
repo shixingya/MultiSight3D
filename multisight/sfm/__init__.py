@@ -13,7 +13,7 @@ from .features import (
 )
 from .geometry import (estimate_fundamental, ransac_fundamental, triangulate,
                        recover_pose, solve_pnp_dlt, ransac_pnp, refine_pnp_gauss_newton,
-                       project, matrix_to_quat)
+                       project, matrix_to_quat, quat_to_matrix)
 from .pipeline import (ReconstructionResult, RegisteredCamera, TwoViewResult, candidate_pairs,
                        default_K, incremental_reconstruction, select_best_pair,
                        two_view_reconstruction)
@@ -24,6 +24,7 @@ __all__ = [
     "match_descriptors", "to_gray",
     "estimate_fundamental", "ransac_fundamental", "triangulate", "recover_pose",
     "solve_pnp_dlt", "ransac_pnp", "refine_pnp_gauss_newton", "project", "matrix_to_quat",
+    "quat_to_matrix",
     "TwoViewResult", "default_K", "two_view_reconstruction",
     "candidate_pairs", "select_best_pair",
     "ReconstructionResult", "RegisteredCamera", "incremental_reconstruction",
