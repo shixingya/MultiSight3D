@@ -22,7 +22,7 @@ ARTIFACTS: dict[str, list[str]] = {
     "preprocess": ["images/list.json", "images/"],
     "sfm": ["sfm/cameras.txt", "sfm/images.txt", "sfm/points3D.ply"],
     "mvs": ["mvs/fusion.ply"],
-    "mesh": ["mesh/mesh.obj"],
+    "mesh": ["mesh/mesh.obj", "mesh/mesh.ply"],
     # v0.3：real 档产逐顶点真彩色 GLB（无 UV 烘焙→无 texture.png）；mock 仍额外写 texture.png，
     # 就绪判定以 model.glb 为准（见 doc/DECISIONS.md）。
     "texture": ["texture/model.glb"],

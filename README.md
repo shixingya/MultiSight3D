@@ -25,11 +25,11 @@
 | --- | --- | --- |
 | 无序图像稀疏 SfM（完全自研：特征/匹配/两视图/增量注册/结构增长/全局 BA） | v0.1 | ✅ Real 已落全链（候选对择优→逐帧 PnP→新点三角化增长→LM BA），输出 COLMAP 兼容相机/稀疏点 |
 | MVS 稠密重建（传统平面扫描 NCC 基线已落地；学习型/PatchMatch 高档待补） | v0.2 | 🟡 Real 已接线：读 SfM 位姿→逐视图平面扫描深度图→跨视图置信融合去重→稠密 fusion.ply（纯 numpy、CPU 可跑） |
-| 网格重建（传统距离图像网格化）+ 逐顶点真彩色 GLB 直出（UV 纹理烘焙待补） | v0.3 | 🟡 mesh.Real 已接线（读 MVS 逐视图深度图→三角化→拼接→mesh.obj，顶点带真彩色）；texture.Real 已接线（读 mesh.obj→COLOR_0 顶点色 model.glb，纯 numpy）；真实 UV 展开/多视图纹理烘焙/泊松统一网格待落地 |
+| 网格重建（传统距离图像网格化）+ 逐顶点真彩色 GLB/PLY 直出（UV 纹理烘焙待补） | v0.3 | 🟡 mesh.Real 已接线（读 MVS 逐视图深度图→三角化→拼接→mesh.obj + mesh.ply，顶点带真彩色，含 FR-09 水密性/拓扑检查）；texture.Real 已接线（读 mesh.obj→COLOR_0 顶点色 model.glb，纯 numpy）；真实 UV 展开/多视图纹理烘焙/泊松统一网格待落地 |
 | CLI 一键全流程 / 断点续跑 / 质量报告 | v0.1 | ✅ 已可用 |
 | WebUI：拖拽上传 / 实时进度 / 3D 预览 / 下载 | v0.1 壳 | ✅ 已可用 |
 | 外部成品模型读取（OpenFlight .flt/.ive / TGA·DDS 贴图 / docx / 转盘）+ 单文件离线 demo | v0.1 旁支 | ✅ 已可用 |
-| 拍摄预检（模糊检测 / 补拍建议） | v0.4 增强 | ✅ 基础版已可用 |
+| 拍摄预检（模糊检测）+ 质量报告（阶段指标/重投影误差/水密性/下游阈值警告）+ FR-11 补拍建议 | v0.4 增强 | ✅ 已可用（report 聚合 sfm/mvs/mesh/texture stats + 可执行补拍 guidance） |
 
 ## 🚀 快速开始
 

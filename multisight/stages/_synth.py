@@ -76,6 +76,30 @@ def write_obj_trimesh(path: Path, verts: np.ndarray, faces: np.ndarray, name: st
     path.write_text("\n".join(out) + "\n", encoding="ascii")
 
 
+def write_ply_mesh(path: Path, verts: np.ndarray, faces: np.ndarray,
+                   colors: np.ndarray | None = None) -> None:
+    """写 ASCII PLY 三角网格（FR-08：PLY 网格产物）。verts (N,3) float、faces (M,3) int（0-based）。
+    colors (N,3) uint8 可选：逐顶点色写为 vertex 的 red/green/blue 属性。"""
+    verts = np.asarray(verts, dtype=np.float64)
+    faces = np.asarray(faces, dtype=np.int64).reshape(-1, 3)
+    n, m = len(verts), len(faces)
+    lines = ["ply", "format ascii 1.0",
+             f"element vertex {n}",
+             "property float x", "property float y", "property float z"]
+    if colors is not None:
+        lines += ["property uchar red", "property uchar green", "property uchar blue"]
+    lines += [f"element face {m}", "property list uchar int vertex_indices", "end_header"]
+    c = np.asarray(colors) if colors is not None else None
+    for i in range(n):
+        row = f"{verts[i, 0]:.5f} {verts[i, 1]:.5f} {verts[i, 2]:.5f}"
+        if c is not None:
+            row += f" {int(c[i, 0])} {int(c[i, 1])} {int(c[i, 2])}"
+        lines.append(row)
+    for a, b, cc in faces:
+        lines.append(f"3 {int(a)} {int(b)} {int(cc)}")
+    path.write_text("\n".join(lines) + "\n", encoding="ascii")
+
+
 def read_obj_trimesh(path: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray | None]:
     """读 OBJ 三角网格：返回 (positions (N,3), indices (M,) 0-based, colors (N,3) uint8 或 None)。
     兼容 `v x y z [r g b]`（色归 0~1 → 回乘 255）与多边形面（扇形三角剖分）、`f a/b/c` 组索。"""

@@ -15,6 +15,7 @@ import pytest
 from multisight.events import Bus
 from multisight.pipeline import StageContext
 from multisight.stages.mesh import Real as MeshReal
+from multisight.stages._synth import write_ply_mesh
 from multisight.workspace import Workspace
 
 pytest.importorskip("numpy")
@@ -60,6 +61,14 @@ def test_real_mesh_from_depthmap(tmp_path):
     assert all(len(ln.split()) == 7 for ln in vlines)          # v x y z r g b
     assert sum(ln.startswith("f ") for ln in lines) == stats["faces"]
 
+    # FR-08：同时产出 PLY 网格（带逐顶点色）
+    ply = (ws.root / "mesh" / "mesh.ply").read_text(encoding="ascii").splitlines()
+    assert ply[0] == "ply"
+    assert f"element vertex {hs * ws_n}" in ply[0 + 2]
+    assert f"element face {stats['faces']}" in ply
+    assert "property uchar red" in ply
+    assert len(ply) == 2 + 4 + 3 + 2 + 1 + hs * ws_n + stats["faces"]   # header + verts + faces
+
 
 def test_real_mesh_without_color(tmp_path):
     ws = Workspace.create(tmp_path, task_id="t1")
@@ -84,3 +93,30 @@ def test_real_mesh_requires_depthmaps(tmp_path):
     ws = Workspace.create(tmp_path, task_id="t1")
     with pytest.raises(ValueError, match="缺少 MVS 深度图"):
         MeshReal().run(_ctx(ws))
+
+
+def test_write_ply_mesh_colored_roundtrip(tmp_path):
+    v = np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0]], float)
+    f = np.array([[0, 1, 2]], np.int64)
+    c = np.array([[255, 0, 0], [0, 255, 0], [0, 0, 255]], np.uint8)
+    p = tmp_path / "m.ply"
+    write_ply_mesh(p, v, f, colors=c)
+    lines = p.read_text(encoding="ascii").splitlines()
+    assert lines[0] == "ply" and lines[1] == "format ascii 1.0"
+    assert "element vertex 3" in lines and "element face 1" in lines
+    assert "property uchar red" in lines
+    assert "property list uchar int vertex_indices" in lines
+    hdr = lines.index("end_header")
+    assert lines[hdr + 1].split() == ["0.00000", "0.00000", "0.00000", "255", "0", "0"]
+    assert lines[-1] == "3 0 1 2"
+
+
+def test_write_ply_mesh_colorless(tmp_path):
+    v = np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0], [1, 1, 0]], float)
+    f = np.array([[0, 1, 2], [1, 3, 2]], np.int64)
+    p = tmp_path / "m2.ply"
+    write_ply_mesh(p, v, f)
+    lines = p.read_text(encoding="ascii").splitlines()
+    assert "property uchar red" not in lines
+    assert lines[lines.index("end_header") + 1].split() == ["0.00000", "0.00000", "0.00000"]
+    assert lines[-2:] == ["3 0 1 2", "3 1 3 2"]

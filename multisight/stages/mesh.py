@@ -15,7 +15,8 @@ import numpy as np
 
 from ..pipeline import Stage, StageContext
 from ..mvs import analyze_mesh_topology, depth_map_to_mesh
-from ._synth import write_obj_cube, write_obj_trimesh
+from ._synth import write_obj_cube, write_obj_trimesh, write_ply_mesh
+from ._synth import _CUBE_V, _CUBE_F
 
 
 class Mock(Stage):
@@ -24,8 +25,10 @@ class Mock(Stage):
     def run(self, ctx: StageContext) -> None:
         ctx.progress(self.name, 30, "空间裁剪与泊松重建（mock：占位立方）")
         write_obj_cube(ctx.ws.file("mesh", "mesh.obj"))
+        write_ply_mesh(ctx.ws.file("mesh", "mesh.ply"),
+                       np.array(_CUBE_V, float), np.array(_CUBE_F, dtype=np.int64))
         ctx.progress(self.name, 70, "减面（mock：跳过）")
-        ctx.progress(self.name, 100, "网格重建完成：8 顶点 / 12 三角形（占位）")
+        ctx.progress(self.name, 100, f"网格重建完成：{len(_CUBE_V)} 顶点 / {len(_CUBE_F)} 三角形（占位）")
 
 
 class Real(Stage):
@@ -73,6 +76,7 @@ class Real(Stage):
         F = np.vstack(all_f)
         colors = np.vstack(all_c) if len(all_c) == len(all_v) and len(V) == sum(len(c) for c in all_c) else None
         write_obj_trimesh(ctx.ws.file("mesh", "mesh.obj"), V, F, colors=colors)
+        write_ply_mesh(ctx.ws.file("mesh", "mesh.ply"), V, F, colors=colors)
         topo = analyze_mesh_topology(V, F)
         ctx.progress(self.name, 100, f"网格重建完成：{len(V)} 顶点 / {len(F)} 三角形（水密={topo['is_watertight']}，边界边={topo['boundary_edges']}）")
         (ctx.ws.root / "mesh" / "stats.json").write_text(json.dumps({
