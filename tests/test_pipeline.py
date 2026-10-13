@@ -77,6 +77,24 @@ def test_preprocess_blur_and_warnings(tmp_path, photos_dir):
     assert run_pipeline(ws, engine="mock")
     import json
     listing = json.loads((ws.root / "images" / "list.json").read_text(encoding="utf-8"))
+    # 每条照片记录带 focal_px_est 字段（EXIF 缺失时为 None，诚实缺省）
+    assert all("focal_px_est" in p for p in listing["photos"])
     flat = [p for p in listing["photos"] if p["source"] == "flat.jpg"]
     assert flat and flat[0]["suspect_blur"] is True
     assert any("模糊" in w for w in listing["warnings"])
+
+
+def test_focal_px_from_35mm():
+    from multisight.stages.preprocess import focal_px_from_35mm
+    # 50mm 等效、宽 1000px、全幅 36mm → 50/36*1000 ≈ 1388.889
+    assert focal_px_from_35mm(50.0, 1000) == pytest.approx(1388.889, abs=1e-3)
+    # 自定义传感器宽
+    assert focal_px_from_35mm(35.0, 640, sensor_w_mm=36.0) == pytest.approx(622.222, abs=1e-3)
+    # 非法入参诚实返回 None（不臆造焦距）
+    assert focal_px_from_35mm(None, 1000) is None
+    assert focal_px_from_35mm(50.0, 0) is None
+    assert focal_px_from_35mm(50.0, -10) is None
+    assert focal_px_from_35mm(0.0, 1000) is None
+    assert focal_px_from_35mm(-5.0, 1000) is None
+    assert focal_px_from_35mm("abc", 1000) is None
+    assert focal_px_from_35mm(50.0, 1000, sensor_w_mm=0) is None

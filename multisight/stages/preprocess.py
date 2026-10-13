@@ -48,6 +48,25 @@ def read_exif_focal(img: Image.Image) -> float | None:
     return None
 
 
+FULLFRAME_SENSOR_W_MM = 36.0     # 35mm 等效所基于的全幅传感器短边（横构图）
+
+
+def focal_px_from_35mm(focal_mm_35eq, width_px: int, sensor_w_mm: float = FULLFRAME_SENSOR_W_MM):
+    """35mm 等效焦距 → 处理图上的像素焦距 f = focal_mm_35eq / sensor_w_mm × width_px。
+
+    供 SfM 初始内参先验（EXIF 缺失时回退经验值）。诚实：focal/width 非法（None/<=0）
+    或 sensor 宽 <=0 时返回 None（不臆造焦距）。"""
+    if focal_mm_35eq is None or width_px is None or width_px <= 0 or sensor_w_mm <= 0:
+        return None
+    try:
+        f = float(focal_mm_35eq)
+    except (TypeError, ValueError):
+        return None
+    if not f > 0:
+        return None
+    return round(f / sensor_w_mm * float(width_px), 3)
+
+
 class PreprocessBase(Stage):
     name = "preprocess"
 
@@ -79,13 +98,15 @@ class PreprocessBase(Stage):
                 stem = f"img{idx:04d}"
                 dst = out_dir / f"{stem}.jpg"
                 im.save(dst, quality=92)
+                focal35 = read_exif_focal(Image.open(src))
                 records.append({
                     "id": stem,
                     "source": src.name,
                     "file": f"images/{dst.name}",
                     "width": im.size[0],
                     "height": im.size[1],
-                    "focal_mm_35eq": read_exif_focal(Image.open(src)),
+                    "focal_mm_35eq": focal35,
+                    "focal_px_est": focal_px_from_35mm(focal35, im.size[0]),
                     "blur_score": round(blur, 1),
                     "suspect_blur": blur < BLUR_THRESHOLD,
                 })
