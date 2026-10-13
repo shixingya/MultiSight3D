@@ -198,6 +198,8 @@ function renderStats(s) {
   if (s.photo_count != null) chips.push(['📷 ' + fmt(s.photo_count) + ' 张', null]);
   if (s.register_rate != null) chips.push(['注册率 ' + Math.round(s.register_rate * 100) + '%', null]);
   if (s.dense_points != null) chips.push(['稠密 ' + fmt(s.dense_points) + ' 点', null]);
+  if (s.cloud_size) chips.push(['点云尺寸 ' + s.cloud_size.map((v) => Number(v).toFixed(2)).join('×'), null]);
+  if (s.cloud_volume != null) chips.push(['点云体积 ' + fmt(s.cloud_volume), null]);
   if (s.mesh_faces != null) chips.push(['网格 ' + fmt(s.mesh_faces) + ' 面', null]);
   if (s.watertight != null) chips.push([s.watertight ? '水密' : '开洞', s.watertight ? 'ok' : 'bad']);
   if (s.mesh_area != null) chips.push(['面积 ' + fmt(s.mesh_area), null]);

@@ -66,6 +66,10 @@ def _summarize_stats(rep: dict) -> dict:
         stats["sparse_points"] = sfm["sparse_points"]
     if mvs.get("dense_points") is not None:
         stats["dense_points"] = mvs["dense_points"]
+    if mvs.get("cloud_obb_extent") is not None:
+        stats["cloud_size"] = mvs["cloud_obb_extent"]
+    if mvs.get("cloud_obb_volume") is not None:
+        stats["cloud_volume"] = mvs["cloud_obb_volume"]
     if mesh.get("faces") is not None:
         stats["mesh_faces"] = mesh["faces"]
     if mesh.get("watertight") is not None:

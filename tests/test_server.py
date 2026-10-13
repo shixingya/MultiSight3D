@@ -136,7 +136,8 @@ def test_summarize_stats_helper():
     from multisight.server.app import _summarize_stats
     rep = {"photo_count": 30, "pipeline_duration_s": 12.5,
            "sfm": {"register_rate": 0.9, "sparse_points": 500},
-           "mvs": {"dense_points": 8000},
+           "mvs": {"dense_points": 8000, "cloud_obb_extent": [1.0, 2.0, 3.0],
+                   "cloud_obb_volume": 6.0},
            "mesh": {"faces": 4000, "watertight": False, "area": 12.3,
                     "volume_abs": 4.5, "bbox_extent": [1.0, 2.0, 3.0]},
            "texture": {"triangles": 4000}}
@@ -144,6 +145,7 @@ def test_summarize_stats_helper():
     assert s["photo_count"] == 30 and s["pipeline_duration_s"] == 12.5
     assert s["mesh_faces"] == 4000 and s["glb_triangles"] == 4000
     assert s["mesh_area"] == 12.3 and s["mesh_bbox_extent"] == [1.0, 2.0, 3.0]
+    assert s["cloud_size"] == [1.0, 2.0, 3.0] and s["cloud_volume"] == 6.0
     # 空/缺字段诚实省略（不塞 None）
     s2 = _summarize_stats({"sfm": {}})
     assert "photo_count" not in s2 and "register_rate" not in s2
